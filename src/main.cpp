@@ -143,7 +143,7 @@ static void createDIB(HWND hwnd, int w, int h) {
     if (g_hbmp)   DeleteObject(g_hbmp);                 // 删除位图对象
     if (g_hdc)    ReleaseDC(hwnd, g_hdc);               // 释放窗口的画布
 
-    g_hdc = GetDC(hwnd);                                // 获取窗口画布 Device Context
+    g_hdc = GetDC(hwnd);                                // 凭句柄hwnd获取窗口画布 Device Context
     g_memDC = CreateCompatibleDC(g_hdc);                // 创建内存画布（双缓冲）
 
     //配置位图数据
@@ -155,13 +155,13 @@ static void createDIB(HWND hwnd, int w, int h) {
     bmi.bmiHeader.biBitCount = 32;                      // 每像素32位（BGRA）
     bmi.bmiHeader.biCompression = BI_RGB;               // 无压缩
 
-    g_hbmp = CreateDIBSection(g_hdc, &bmi, DIB_RGB_COLORS, &g_dibBits, nullptr, 0);//创建位图，返回像素数据指针
+    g_hbmp = CreateDIBSection(g_hdc, &bmi, DIB_RGB_COLORS, &g_dibBits, nullptr, 0);//创建位图对象，g_dibBits有了指向
     SelectObject(g_memDC, g_hbmp);                      //位图选入内存画布
     g_hFramebuf = (unsigned int*)g_dibBits;             //像素数据指针转为无符号整型指针
 }
 
 //-------------------------------------------------------------------
-//逐帧渲染
+//集成好的逐帧渲染
 static void renderFrame() {
     // 检查帧缓冲和渲染函数是否可用
     if (!g_hFramebuf || !p_cudaRender) return;
@@ -202,7 +202,7 @@ static void renderFrame() {
 }
 
 //-------------------------------------------------------------------
-//Win32窗口消息回调函数
+//Win32窗口消息回调函数（其实就是对各自操作的反应）
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_DESTROY: {                  // 窗口被销毁
@@ -317,8 +317,8 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
 
     // 创建窗口
     g_hwnd = CreateWindowExA(
-        0, "BF3DViewer",                          // 窗口类名
-        "BlackFrame 3D Viewer",                   // 窗口标题
+        0, "3DViewer",                          // 窗口类名
+        "3D Viewer",                   // 窗口标题
         WS_OVERLAPPEDWINDOW,                      // 窗口样式（可调整大小）
         CW_USEDEFAULT, CW_USEDEFAULT, ww, wh,     // 位置和大小
         nullptr, nullptr, hInst, nullptr);

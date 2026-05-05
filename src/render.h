@@ -152,7 +152,7 @@ struct GPUTriangle {
     unsigned char color[3];//RGB颜色值（0-255），该类型1字节，8位，256种
 };
 
-//渲染参数,从CPU传递给GPU，包含所有渲染所需的变换和光照参数
+//渲染参数,从CPU传递给GPU，包含所有渲染所需的变换和光照参数(全局设置)
 struct RenderParams {
     Mat4 mvp;       //模型-视图-投影 矩阵：模型空间到裁剪空间
     Mat4 modelView; //模型-视图矩阵：用于将法线变换到视图空间进行光照计算
@@ -188,8 +188,8 @@ extern "C" {        // 使用C语言链接规范（防止C++名称修饰，便于动态加载）
 
     // 渲染一帧：执行光栅化和光照计算
     // 参数：params - 渲染参数（MVP矩阵、光源等）
-    //       hostOut - 输出缓冲区指针（BGRA格式，至少 width*height*4 字节）
-    CUDA_API void cudaRender(const RenderParams& params, unsigned int* hostOut);
+    //       g_hFramebuf - 输出缓冲区指针（BGRA格式，至少 width*height*4 字节）
+    CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf);
 
     // 释放所有GPU资源：在卸载DLL之前调用
     CUDA_API void cudaShutdown(void);

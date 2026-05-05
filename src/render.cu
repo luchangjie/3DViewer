@@ -175,6 +175,7 @@ void clearKernel(unsigned int* framebuf, float* depthbuf, int width, int height)
 
 
 //导出DLL文件的API
+//初始化CUDA
 extern "C" CUDA_API
 int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	//检测可用GPU数量
@@ -233,9 +234,9 @@ void cudaUploadTriangles(const GPUTriangle* tris, int numTris) {
 
 //渲染一帧
 extern "C" CUDA_API
-void cudaRender(const RenderParams& params, unsigned int* hostOut) {
+void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	// 检查GPU缓冲区和输出指针是否有效
-	if (!g_dFramebuf || !g_dDepthbuf || !hostOut) return;
+	if (!g_dFramebuf || !g_dDepthbuf || !g_hFramebuf) return;
 	// 配置CUDA线程网格（每个线程块16×16线程）
 	dim3 block(16, 16);
 	//算需要线程块数，向上取整
@@ -249,7 +250,7 @@ void cudaRender(const RenderParams& params, unsigned int* hostOut) {
 		g_dTris ? g_dTris : nullptr,  // 如果没有三角形，传nullptr
 		params);
 	//第三步：显存结果拷贝回内存
-	cudaMemcpy(hostOut, g_dFramebuf,
+	cudaMemcpy(g_hFramebuf, g_dFramebuf,
 		(size_t)params.width * params.height * sizeof(unsigned int),
 		cudaMemcpyDeviceToHost);
 }
