@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37111.16
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "3DViewer", "3DViewer\3DViewer.vcxproj", "{9739D1F2-ED3D-95A4-5434-F0C30A014508}"
+	ProjectSection(ProjectDependencies) = postProject
+		{D099F18A-DAA7-68F9-F1A7-934BE2DA23BF} = {D099F18A-DAA7-68F9-F1A7-934BE2DA23BF}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "render_kernel", "render_kernel\render_kernel.vcxproj", "{D099F18A-DAA7-68F9-F1A7-934BE2DA23BF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9739D1F2-ED3D-95A4-5434-F0C30A014508}.Debug|x64.ActiveCfg = Debug|x64
+		{9739D1F2-ED3D-95A4-5434-F0C30A014508}.Debug|x64.Build.0 = Debug|x64
+		{9739D1F2-ED3D-95A4-5434-F0C30A014508}.Release|x64.ActiveCfg = Release|x64
+		{9739D1F2-ED3D-95A4-5434-F0C30A014508}.Release|x64.Build.0 = Release|x64
+		{D099F18A-DAA7-68F9-F1A7-934BE2DA23BF}.Debug|x64.ActiveCfg = Debug|x64
+		{D099F18A-DAA7-68F9-F1A7-934BE2DA23BF}.Debug|x64.Build.0 = Debug|x64
+		{D099F18A-DAA7-68F9-F1A7-934BE2DA23BF}.Release|x64.ActiveCfg = Release|x64
+		{D099F18A-DAA7-68F9-F1A7-934BE2DA23BF}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {27CAFD14-6E78-461F-A94A-6C8F1F373932}
+	EndGlobalSection
+EndGlobal
