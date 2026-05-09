@@ -192,12 +192,23 @@ static void renderFrame() {
     p_cudaRender(rp, g_hFramebuf);
     // 将渲染结果从内存DC拷贝到窗口DC（双缓冲显示）
     BitBlt(g_hdc, 0, 0, WIN_W, WIN_H, g_memDC, 0, 0, SRCCOPY);
+    // FPS 显示
+    static DWORD lastTime = 0;
+    static int frameCount = 0;
+    static float fps = 0.0f;
+    frameCount++;
+    DWORD curTime = GetTickCount();
+    if (curTime - lastTime >= 500) {
+        fps = frameCount * 1000.0f / (curTime - lastTime);
+        frameCount = 0;
+        lastTime = curTime;
+    }
     // 更新窗口标题栏信息
     char title[128];
     const char* modeStr = g_voxelMode ? "Voxel" : (g_wireframe ? "Wire" : "Solid");
     snprintf(title, sizeof(title),
-        "3DViewer  |  Tris: %d  |  Mode: %s  |  [W]Wire [V]Voxel [O]Open [R]Reset",
-        g_numTris, modeStr);
+        "3DViewer  |  Tris: %d  |  FPS: %.1f  |  Mode: %s  |  [W]Wire [V]Voxel [O]Open [R]Reset",
+        g_numTris,fps, modeStr);
     SetWindowTextA(g_hwnd, title);
 }
 
