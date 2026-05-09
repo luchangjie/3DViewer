@@ -115,7 +115,7 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
     }
 
     // 第三步：体素化参数
-    const int resolution =5;                  //体素密度（类似分辨率）
+    const int resolution =40;                  //体素密度（类似分辨率）
     float stepX = (hi.x - lo.x) / resolution;
     float stepY = (hi.y - lo.y) / resolution;
     float stepZ = (hi.z - lo.z) / resolution;   //体素步长
