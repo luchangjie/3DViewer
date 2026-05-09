@@ -166,6 +166,12 @@ struct RenderParams {
     float specPower;//高光指数（像镜面程度）
 };
 
+//一改：预计算三角形屏幕包围盒 + NDC 坐标
+struct TriCached {
+    float nx[3], ny[3], nz[3];  // NDC 坐标
+    int minX, maxX, minY, maxY; // 屏幕像素包围盒
+};
+
 //DLL引入API（实现在render.cu）
 #ifdef BUILDING_CUDA_DLL    //如果是构建dll
 # define CUDA_API __declspec(dllexport)//就定义为导出函数(微软dll导出表函数标记，标记函数后使dll内指定函数被exe可见)
@@ -193,4 +199,5 @@ extern "C" {        // 使用C语言链接规范（防止C++名称修饰，便于动态加载）
 
     // 释放所有GPU资源：在卸载DLL之前调用
     CUDA_API void cudaShutdown(void);
+
 }

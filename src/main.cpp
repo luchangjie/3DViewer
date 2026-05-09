@@ -179,9 +179,9 @@ static void renderFrame() {
     RenderParams rp;
     rp.mvp = proj * view * model;               //模型-视图-投影 矩阵：模型空间到裁剪空间
     rp.modelView = view * model;                //模型-视图矩阵：用于将法线变换到视图空间进行光照计算
-    rp.lightDir = Vec3(0.6f, 0.8f, 0.5f).norm();//世界空间光照方向，指向光源
+    rp.lightDir = Vec3(0.6f, 0.8f, -0.5f).norm();//世界空间光照方向，指向光源
     rp.lightColor = { 1.0f, 0.98f, 0.95f };     //光源颜色
-    rp.ambient = { 0.12f, 0.12f, 0.15f };       //环境光颜色
+    rp.ambient = { 0.3f, 0.3f, 0.3f };          //环境光颜色
     rp.width = WIN_W;                           // 帧缓冲宽度（像素）
     rp.height = WIN_H;                          // 帧缓冲高度（像素）
     rp.numTris = g_numTris;                     // 三角形总数     
@@ -305,7 +305,7 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     wc.lpfnWndProc = WndProc;                      // 窗口消息处理函数
     wc.hInstance = hInst;                        // 应用程序实例句柄
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW); // 默认箭头光标
-    wc.lpszClassName = "BF3DViewer";                 // 窗口类名
+    wc.lpszClassName = "3DViewer";                 // 窗口类名
     wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION); // 默认应用图标
     RegisterClassExA(&wc);                            // 注册窗口类
 

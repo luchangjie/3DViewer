@@ -12,6 +12,7 @@ static GPUTriangle* g_dTris = nullptr;		//设备端三角形数据指针
 static int g_numTris = 0;					//当前三角形数量
 static int g_fbWidth = 0;					//帧缓冲宽度
 static int g_fbHeight = 0;					//帧缓冲高度
+static TriCached* g_dTriCache = nullptr;	//一改，三角形NDC坐标+包围盒
 
 //边函数，屏幕向下看，判断点在线的左or右(正顺右，负逆左)，返回有符号面积（正向屏上，负向屏下）
 __device__ __forceinline__
@@ -19,13 +20,60 @@ float edgeFunc(float ax, float ay, float bx, float by, float px, float py) {
 	return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 }
 
+//一改：提前算好每个三角形的ndc坐标和包围盒，逐像素时拿现成的判断+计算光照
+__global__ void computeTriCacheKernel(
+	TriCached* triCache,
+	const GPUTriangle* tris,
+	int numTris,
+	RenderParams p)
+{
+	int t = blockIdx.x * blockDim.x + threadIdx.x;
+	if (t >= numTris) return;
+
+	const GPUTriangle& tri = tris[t];
+	TriCached& tc = triCache[t];
+
+	float minX = 1e30f, maxX = -1e30f;
+	float minY = 1e30f, maxY = -1e30f;
+
+	for (int k = 0; k < 3; ++k) {
+		float vx = tri.v[k].x, vy = tri.v[k].y, vz = tri.v[k].z;
+
+		float cx = p.mvp.m[0][0] * vx + p.mvp.m[1][0] * vy + p.mvp.m[2][0] * vz + p.mvp.m[3][0];
+		float cy = p.mvp.m[0][1] * vx + p.mvp.m[1][1] * vy + p.mvp.m[2][1] * vz + p.mvp.m[3][1];
+		float cz = p.mvp.m[0][2] * vx + p.mvp.m[1][2] * vy + p.mvp.m[2][2] * vz + p.mvp.m[3][2];
+		float cw = p.mvp.m[0][3] * vx + p.mvp.m[1][3] * vy + p.mvp.m[2][3] * vz + p.mvp.m[3][3];
+
+		if (cw <= 0.f) {
+			tc.nx[k] = -2.f; tc.ny[k] = -2.f; tc.nz[k] = 2.f;
+			minX = -2.f; maxX = -2.f; minY = -2.f; maxY = -2.f;
+			continue;
+		}
+
+		tc.nx[k] = cx / cw;
+		tc.ny[k] = cy / cw;
+		tc.nz[k] = cz / cw;
+
+		minX = fminf(minX, tc.nx[k]);
+		maxX = fmaxf(maxX, tc.nx[k]);
+		minY = fminf(minY, tc.ny[k]);
+		maxY = fmaxf(maxY, tc.ny[k]);
+	}
+
+	tc.minX = fmaxf(0, fminf(p.width - 1, (int)((minX + 1.0f) * 0.5f * p.width)));
+	tc.maxX = fmaxf(0, fminf(p.width - 1, (int)((maxX + 1.0f) * 0.5f * p.width)));
+	tc.minY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - maxY) * 0.5f * p.height)));
+	tc.maxY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - minY) * 0.5f * p.height)));
+}
+
 //主光栅化，对于每个像素
 __global__
 void rasterizeKernel(
-	unsigned int* framebuf,	//
+	unsigned int* framebuf,	
 	float* depthbuf,
-	const GPUTriangle* tris,//三角形数组（只读）
-	RenderParams p			//
+	const TriCached* triCache,  // 一改
+	const GPUTriangle* tris,
+	RenderParams p			
 ) {
 	int px = blockIdx.x * blockDim.x + threadIdx.x;//屏幕x坐标像素
 	int py = blockIdx.y * blockDim.y + threadIdx.y;//屏幕y坐标像素
@@ -42,29 +90,18 @@ void rasterizeKernel(
 
 	//定一个像素，挨个看三角形
 	for (int t = 0; t < p.numTris; ++t) {
-		const GPUTriangle& tri = tris[t];
-		//顶点0 1 2的MVP变换
-		float cx0 = p.mvp.m[0][0] * tri.v[0].x + p.mvp.m[1][0] * tri.v[0].y + p.mvp.m[2][0] * tri.v[0].z + p.mvp.m[3][0];
-		float cy0 = p.mvp.m[0][1] * tri.v[0].x + p.mvp.m[1][1] * tri.v[0].y + p.mvp.m[2][1] * tri.v[0].z + p.mvp.m[3][1];
-		float cz0 = p.mvp.m[0][2] * tri.v[0].x + p.mvp.m[1][2] * tri.v[0].y + p.mvp.m[2][2] * tri.v[0].z + p.mvp.m[3][2];
-		float cw0 = p.mvp.m[0][3] * tri.v[0].x + p.mvp.m[1][3] * tri.v[0].y + p.mvp.m[2][3] * tri.v[0].z + p.mvp.m[3][3];
-		float cx1 = p.mvp.m[0][0] * tri.v[1].x + p.mvp.m[1][0] * tri.v[1].y + p.mvp.m[2][0] * tri.v[1].z + p.mvp.m[3][0];
-		float cy1 = p.mvp.m[0][1] * tri.v[1].x + p.mvp.m[1][1] * tri.v[1].y + p.mvp.m[2][1] * tri.v[1].z + p.mvp.m[3][1];
-		float cz1 = p.mvp.m[0][2] * tri.v[1].x + p.mvp.m[1][2] * tri.v[1].y + p.mvp.m[2][2] * tri.v[1].z + p.mvp.m[3][2];
-		float cw1 = p.mvp.m[0][3] * tri.v[1].x + p.mvp.m[1][3] * tri.v[1].y + p.mvp.m[2][3] * tri.v[1].z + p.mvp.m[3][3];
-		float cx2 = p.mvp.m[0][0] * tri.v[2].x + p.mvp.m[1][0] * tri.v[2].y + p.mvp.m[2][0] * tri.v[2].z + p.mvp.m[3][0];
-		float cy2 = p.mvp.m[0][1] * tri.v[2].x + p.mvp.m[1][1] * tri.v[2].y + p.mvp.m[2][1] * tri.v[2].z + p.mvp.m[3][1];
-		float cz2 = p.mvp.m[0][2] * tri.v[2].x + p.mvp.m[1][2] * tri.v[2].y + p.mvp.m[2][2] * tri.v[2].z + p.mvp.m[3][2];
-		float cw2 = p.mvp.m[0][3] * tri.v[2].x + p.mvp.m[1][3] * tri.v[2].y + p.mvp.m[2][3] * tri.v[2].z + p.mvp.m[3][3];
-		//近平面裁剪：如果任何顶点的w<=0，说明在摄像机后方
-		if (cw0 <= 0.f || cw1 <= 0.f || cw2 <= 0.f) continue;
-		//透视除法
-		float nx0 = cx0 / cw0, ny0 = cy0 / cw0, nz0 = cz0 / cw0; //点0
-		float nx1 = cx1 / cw1, ny1 = cy1 / cw1, nz1 = cz1 / cw1; //点1
-		float nx2 = cx2 / cw2, ny2 = cy2 / cw2, nz2 = cz2 / cw2; //点2
+		const TriCached& tc = triCache[t];
+		//包围盒快速剔除
+		if (px < tc.minX || px > tc.maxX || py < tc.minY || py > tc.maxY)
+            continue;
 		//背面剔除
-		float area = edgeFunc(nx0, ny0, nx1, ny1, nx2, ny2);
+		float area = edgeFunc(tc.nx[0], tc.ny[0], tc.nx[1], tc.ny[1], tc.nx[2], tc.ny[2]);
 		if (area == 0.f) continue;  // 退化三角形（面积为零，跳过）
+
+		float nx0 = tc.nx[0], ny0 = tc.ny[0], nz0 = tc.nz[0];
+		float nx1 = tc.nx[1], ny1 = tc.ny[1], nz1 = tc.nz[1];
+		float nx2 = tc.nx[2], ny2 = tc.ny[2], nz2 = tc.nz[2];
+
 		bool flipped = (area < 0.f);//看到背面
 		if (flipped) {
 			area = -area;  // 取绝对值
@@ -74,12 +111,7 @@ void rasterizeKernel(
 			tmp = ny0; ny0 = ny2; ny2 = tmp;  // 交换Y坐标
 			tmp = nz0; nz0 = nz2; nz2 = tmp;  // 交换Z坐标
 		}
-		//粗：包围盒剔除（CUDA的最值函数求三角形包围盒）
-		float minX = fminf(nx0, fminf(nx1, nx2));
-		float maxX = fmaxf(nx0, fmaxf(nx1, nx2));
-		float minY = fminf(ny0, fminf(ny1, ny2));
-		float maxY = fmaxf(ny0, fmaxf(ny1, ny2));
-		if (ndcX < minX || ndcX > maxX || ndcY < minY || ndcY > maxY) continue;//像素在包围盒外，跳过该三角形
+		
 		//细：重心坐标计算比较（权重和为1，而且面积占的越大离相应点越近，w也能反映距离）
 		float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / area;	//顶点 V0 的权重 = P 到对边 V1-V2 的距离比例
 		float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / area;	//顶点 V1 的权重 = P 到对边 V2-V0 的距离比例
@@ -98,6 +130,7 @@ void rasterizeKernel(
 
 
 		//Blinn_Phong光照
+		const GPUTriangle& tri = tris[t];
 		//提前把0-255转换成0.0-1.0
 		float baseR = tri.color[0] / 255.f;  //基础红色分量
 		float baseG = tri.color[1] / 255.f;  //基础绿色分量
@@ -173,7 +206,6 @@ void clearKernel(unsigned int* framebuf, float* depthbuf, int width, int height)
 }
 
 
-
 //导出DLL文件的API
 //初始化CUDA
 extern "C" CUDA_API
@@ -202,9 +234,10 @@ int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	// 分配新的GPU帧缓冲区和深度缓冲区
 	cudaError_t err1 = cudaMalloc(&g_dFramebuf, sz * sizeof(unsigned int));  // 帧缓冲（BGRA像素）
 	cudaError_t err2 = cudaMalloc(&g_dDepthbuf, sz * sizeof(float));         // 深度缓冲（浮点）
+	cudaError_t err3 = cudaMalloc(&g_dTriCache, 500000 * sizeof(TriCached)); // 预处理数据缓冲，最大50万三角形
 
 	// 检查内存分配是否成功
-	if (err1 != cudaSuccess || err2 != cudaSuccess) return -1;
+	if (err1 != cudaSuccess || err2 != cudaSuccess ||err3 != cudaSuccess) return -1;
 	return 0;  // 成功
 }
 
@@ -237,6 +270,7 @@ extern "C" CUDA_API
 void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	// 检查GPU缓冲区和输出指针是否有效
 	if (!g_dFramebuf || !g_dDepthbuf || !g_hFramebuf) return;
+	if (!g_dTris || !g_dTriCache) return;
 	// 配置CUDA线程网格（每个线程块16×16线程）
 	dim3 block(16, 16);
 	//算需要线程块数，向上取整
@@ -245,11 +279,16 @@ void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	//第一步：清屏
 	clearKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf, params.width, params.height);
 	cudaDeviceSynchronize();  // 等待清屏完成
-	//第二步：光栅化三角形
+	//第二步：GPU预计算每个三角形的NDC坐标+屏幕包围盒
+	int triBlocks = (params.numTris + 255) / 256;
+	computeTriCacheKernel << <triBlocks, 256 >> > (g_dTriCache, g_dTris, params.numTris, params);
+	cudaDeviceSynchronize();  // 等待预计算完成
+	//第三步：光栅化三角形
 	rasterizeKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf,
+		g_dTriCache,
 		g_dTris ? g_dTris : nullptr,  // 如果没有三角形，传nullptr
 		params);
-	//第三步：显存结果拷贝回内存
+	//第四步：显存结果拷贝回内存
 	cudaMemcpy(g_hFramebuf, g_dFramebuf,
 		(size_t)params.width * params.height * sizeof(unsigned int),
 		cudaMemcpyDeviceToHost);
