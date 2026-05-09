@@ -30,7 +30,7 @@ void rasterizeKernel(
 	int px = blockIdx.x * blockDim.x + threadIdx.x;//屏幕x坐标像素
 	int py = blockIdx.y * blockDim.y + threadIdx.y;//屏幕y坐标像素
 
-	if (px >= p.width || py >= p.height)return;//跳过显示区域外的多余像素的线程处理
+	if (px >= p.width || py >= p.height)return;//跳过显示区域外的多余线程的像素处理
 	int idx = py * p.width + px;//像素索引
 
 	//+0.5选像素中心，然后归一化到NDC空间
@@ -74,12 +74,12 @@ void rasterizeKernel(
 			tmp = ny0; ny0 = ny2; ny2 = tmp;  // 交换Y坐标
 			tmp = nz0; nz0 = nz2; nz2 = tmp;  // 交换Z坐标
 		}
-		//粗：包围盒剔除（CUDA的最值函数求包围盒）
+		//粗：包围盒剔除（CUDA的最值函数求三角形包围盒）
 		float minX = fminf(nx0, fminf(nx1, nx2));
 		float maxX = fmaxf(nx0, fmaxf(nx1, nx2));
 		float minY = fminf(ny0, fminf(ny1, ny2));
 		float maxY = fmaxf(ny0, fmaxf(ny1, ny2));
-		if (ndcX < minX || ndcX > maxX || ndcY < minY || ndcY > maxY) continue;//包围盒外，跳过该三角形
+		if (ndcX < minX || ndcX > maxX || ndcY < minY || ndcY > maxY) continue;//像素在包围盒外，跳过该三角形
 		//细：重心坐标计算比较（权重和为1，而且面积占的越大离相应点越近，w也能反映距离）
 		float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / area;	//顶点 V0 的权重 = P 到对边 V1-V2 的距离比例
 		float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / area;	//顶点 V1 的权重 = P 到对边 V2-V0 的距离比例

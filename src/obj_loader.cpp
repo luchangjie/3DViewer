@@ -122,7 +122,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
                 tri.v[k].y = (tri.v[k].y - center.y) * scale;  
                 tri.v[k].z = (tri.v[k].z - center.z) * scale;  
             }
-        // 六：重新计算所有面法线保证变换后安全
+        // 六：重新计算所有面法线保证变换后安全！！！
         for (auto& tri : tris) {
             Vec3 ab = tri.v[1] - tri.v[0];   
             Vec3 ac = tri.v[2] - tri.v[0];   

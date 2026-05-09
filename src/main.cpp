@@ -262,7 +262,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_MOUSEWHEEL: {             // 鼠标滚轮
         int delta = GET_WHEEL_DELTA_WPARAM(wp);  // 获取滚轮增量（正值=向前滚）
-        g_zoom -= delta * 0.005f;     // 调整缩放距离
+        g_zoom -= delta * 0.005f;     // 调整缩放距离，因为模型居中且摄像机看向中，故等价缩放了
         // 限制缩放范围
         if (g_zoom < 0.5f) g_zoom = 0.5f;  // 最近距离
         if (g_zoom > 20.f) g_zoom = 20.f;  // 最远距离
@@ -328,6 +328,7 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     ShowWindow(g_hwnd, nShow);
     UpdateWindow(g_hwnd);
 
+    //---------------------------------------------------------------
     //创建DIB缓冲区（帧缓冲）
     createDIB(g_hwnd, WIN_W, WIN_H);
 
