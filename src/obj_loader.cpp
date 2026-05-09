@@ -2,7 +2,9 @@
 //obj_loader.cpp - obj模型加载器
 //===================================================================
 #include "render.h"
-#include <cstdio>//文件操作
+#include <fstream>
+#include <sstream>      // std::istringstream
+#include <iostream>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -31,42 +33,45 @@ static const int PALETTE_SIZE = (int)(sizeof(PALETTE) / sizeof(PALETTE[0]));
 // 返回值：
 //   成功返回三角形数量，失败返回0
 int loadOBJ(const char* path, GPUTriangle*& triangles) {
-    FILE* fp = fopen(path, "r");//只读模式打开路径指向的文件
-    if (!fp) {
-        fprintf(stderr, "[OBJ] Cannot open file : % s\n", path);
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "[OBJ] Cannot open file: " << path << std::endl;
         triangles = nullptr;
         return 0;
     }
 
     std::vector<Vec3> verts;        //顶点集合
     std::vector<GPUTriangle> tris;  //三角型集合（临时）
-    char line[4096];                //接收每行数据以转换,每行最多4096字符
+    std::string line;                //接收每行数据以转换
     int faceIdx = 0;                //面序号
     int lineNum = 0;                //当前行号
 
     //第一步：得到三角形列表
-    while (fgets(line,sizeof(line), fp)) {
+    while (std::getline(file, line)) {
         lineNum++;
         //解析顶点
         if (line[0] == 'v' && line[1] == ' ') {
             float x, y, z;
-            if (sscanf(line + 2, "%f %f %f", &x, &y, &z) == 3)
-                verts.push_back({ x,y,z });
+            std::istringstream iss(line.substr(2));  // 跳过 "v "
+            if (iss >> x >> y >> z)
+                verts.push_back({ x, y, z });
         }
         else if (line[0] == 'f' && line[1] == ' ') {
             int vi[64];     // 顶点索引数组（最多支持64边形）
             int cnt = 0;    // 当前面的顶点计数
-            char* tok = strtok(line + 2, " \t\n\r");//指针指向被切出的第一个词
-            while (tok && cnt < 64) {
+            std::istringstream iss(line.substr(2));  // 跳过 "f "
+            std::string token;
+            while (iss >> token && cnt < 64) {
                 int v;
-                sscanf(tok, "%d", &v);//从tok中提取一个整数赋给v
-                // OBJ索引从1开始，转换为0基索引负数索引表示从末尾倒数的相对索引
+                // 只取第一个整数（忽略 / 后面的纹理/法线索引）
+                std::istringstream tss(token);
+                tss >> v;
                 vi[cnt++] = (v > 0) ? v - 1 : (int)verts.size() + v;
-                tok = strtok(nullptr, " \t\n\r");  // 继续切、指
             }
             // 如果顶点数超过64个，发出警告（实际会被截断,而且一般不会出现）
             if (cnt >= 64) {
-                fprintf(stderr, "[OBJ] Warning: face at line %d has too many vertices, truncated\n", lineNum);
+                std::cerr << "[OBJ] Warning: face at line " << lineNum
+                    << " has too many vertices, truncated" << std::endl;
             }
             // 扇分割：将多边形f 0 1 2 3分解为三角形(0,1,2)和(0,2,3)
             // 以第一个顶点为公共顶点，依次连接相邻顶点
@@ -93,7 +98,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
             }
         }
     }
-    fclose(fp);
+    file.close();
 
     ////第二步：居中归一化缩放
     if (!tris.empty()) {
