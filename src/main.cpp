@@ -91,6 +91,8 @@ static float     g_rotY = 0.5f;                 // 摄相机绕Y轴旋转角度（弧度）
 static float     g_zoom = 4.5f;                 // 摄像机距离（缩放级别）
 static bool      g_dragging = false;            // 鼠标是否正在拖拽（左键按住）
 static int       g_lastMX = 0, g_lastMY = 0;    // 上一帧的鼠标位置（用于计算增量）
+static bool      g_panning = false;             // 右键拖拽（平移）
+static float     g_panX = 0.f, g_panY = 0.f;    // 平移量
 static bool      g_wireframe = false;           //是否线框模式
 static bool      g_voxelMode = false;           //是否体素模式
 static std::string g_currentModelPath;          //记住当前模型路径
@@ -168,9 +170,10 @@ static void renderFrame() {
     // 构建模型矩阵（先绕Y轴旋转，再绕X轴旋转）
     Mat4 model = Mat4::rotateX(g_rotX) * Mat4::rotateY(g_rotY);
     //摄像机位置
-    Vec3 eye = { 0.f,0.f,g_zoom }; 
+    Vec3 eye = { g_panX, g_panY, g_zoom };  
+    Vec3 center = { g_panX, g_panY, 0.f };      //摄像机和中心是连线的，所以要一起平移
     //构建视图矩阵
-    Mat4 view = Mat4::lookAt(eye, { 0,0,0 }, { 0,1,0 });
+    Mat4 view = Mat4::lookAt(eye, center, { 0,1,0 });
     // 计算宽高比
     float aspect = (float)WIN_W / WIN_H;
     // 构建透视投影矩阵
@@ -235,6 +238,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         else if (wp == 'R') {           // R键：重置摄像机
             g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.5f;
+            g_panX = 0.f; g_panY = 0.f;
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wp == 'O') {           // O键：打开OBJ文件
@@ -251,8 +255,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         SetCapture(hwnd);             // 捕获鼠标（即使鼠标移出窗口也能接收消息）
         return 0;
     }
-    case WM_MOUSEMOVE: {               // 鼠标移动
-        if (g_dragging) {             // 仅在拖拽状态下处理
+    case WM_RBUTTONDOWN: {            // 鼠标右键按下
+        g_panning = true;
+        g_lastMX = LOWORD(lp);
+        g_lastMY = HIWORD(lp);
+        SetCapture(hwnd);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {               
+        if (g_dragging) {           // 左键移动
             int mx = LOWORD(lp), my = HIWORD(lp);  // 当前鼠标位置
             float dx = (mx - g_lastMX) * 0.008f;   // 水平移动增量（转换为旋转量）
             float dy = (my - g_lastMY) * 0.008f;   // 垂直移动增量
@@ -264,11 +275,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             g_lastMX = mx; g_lastMY = my;  // 更新上一帧鼠标位置
             InvalidateRect(hwnd, nullptr, FALSE);  // 请求重绘
         }
+        else if (g_panning) {       // 右键拖拽：平移
+            int mx = LOWORD(lp), my = HIWORD(lp);
+            float dx = (mx - g_lastMX) * 0.003f;  // 灵敏度
+            float dy = (my - g_lastMY) * 0.003f;
+            g_panX -= dx;
+            g_panY += dy;  
+            g_lastMX = mx; g_lastMY = my;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
     }
     case WM_LBUTTONUP: {              // 鼠标左键释放
         g_dragging = false;           // 停止拖拽
         ReleaseCapture();             // 释放鼠标捕获
+        return 0;
+    }
+    case WM_RBUTTONUP: {              // 鼠标右键释放
+        g_panning = false;
+        ReleaseCapture();
         return 0;
     }
     case WM_MOUSEWHEEL: {             // 鼠标滚轮
