@@ -173,8 +173,8 @@ struct TriCached {
 };
 
 //二改：屏幕分块：每个块存覆盖它的三角形索引列表
-#define TILE_SIZE 32
-#define MAX_TRIS_PER_TILE 10240  // 每块最多 n 个三角形
+#define TILE_SIZE 16
+#define MAX_TRIS_PER_TILE 20480  // 每块最多 n 个三角形
 
 struct TileData {
     int triIndices[MAX_TRIS_PER_TILE];  // 三角形索引
