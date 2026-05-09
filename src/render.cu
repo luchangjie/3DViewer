@@ -13,6 +13,8 @@ static int g_numTris = 0;					//当前三角形数量
 static int g_fbWidth = 0;					//帧缓冲宽度
 static int g_fbHeight = 0;					//帧缓冲高度
 static TriCached* g_dTriCache = nullptr;	//一改，三角形NDC坐标+包围盒
+static TileData* g_dTiles = nullptr;		//二改
+static int g_tilesX = 0, g_tilesY = 0;		//二改
 
 //边函数，屏幕向下看，判断点在线的左or右(正顺右，负逆左)，返回有符号面积（正向屏上，负向屏下）
 __device__ __forceinline__
@@ -66,6 +68,41 @@ __global__ void computeTriCacheKernel(
 	tc.maxY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - minY) * 0.5f * p.height)));
 }
 
+//二改：分块构建内核
+__global__ void buildTileKernel(
+	TileData* tiles,
+	const TriCached* triCache,
+	int numTris,
+	int tilesX, int tilesY,
+	int width, int height)
+{
+	int tx = blockIdx.x * blockDim.x + threadIdx.x;
+	int ty = blockIdx.y * blockDim.y + threadIdx.y;
+	if (tx >= tilesX || ty >= tilesY) return;
+
+	int tileIdx = ty * tilesX + tx;
+	TileData& tile = tiles[tileIdx];
+	tile.triCount = 0;
+
+	// 块的像素范围
+	int tileMinX = tx * TILE_SIZE;
+	int tileMaxX = fminf((tx + 1) * TILE_SIZE - 1, width - 1);
+	int tileMinY = ty * TILE_SIZE;
+	int tileMaxY = fminf((ty + 1) * TILE_SIZE - 1, height - 1);
+
+	// 遍历所有三角形，找出覆盖这个块的
+	for (int t = 0; t < numTris && tile.triCount < MAX_TRIS_PER_TILE; ++t) {
+		const TriCached& tc = triCache[t];
+
+		// 检查三角形包围盒是否和块相交
+		if (tc.maxX < tileMinX || tc.minX > tileMaxX ||
+			tc.maxY < tileMinY || tc.minY > tileMaxY)
+			continue;
+
+		tile.triIndices[tile.triCount++] = t;
+	}
+}
+
 //主光栅化，对于每个像素
 __global__
 void rasterizeKernel(
@@ -73,12 +110,22 @@ void rasterizeKernel(
 	float* depthbuf,
 	const TriCached* triCache,  // 一改
 	const GPUTriangle* tris,
+	const TileData* tiles,		// 二改
+	int tilesX,					// 二改
 	RenderParams p			
 ) {
 	int px = blockIdx.x * blockDim.x + threadIdx.x;//屏幕x坐标像素
 	int py = blockIdx.y * blockDim.y + threadIdx.y;//屏幕y坐标像素
-
 	if (px >= p.width || py >= p.height)return;//跳过显示区域外的多余线程的像素处理
+
+	// 找到这个像素属于哪个块
+	int tx = px / TILE_SIZE;
+	int ty = py / TILE_SIZE;
+	int tileIdx = ty * tilesX + tx;
+	const TileData& tile = tiles[tileIdx];
+	// 背景块：没有三角形覆盖 → 直接返回
+	if (tile.triCount == 0) return;
+
 	int idx = py * p.width + px;//像素索引
 
 	//+0.5选像素中心，然后归一化到NDC空间
@@ -89,7 +136,9 @@ void rasterizeKernel(
 	unsigned int bestColor = framebuf[idx];	//最前边的物体的颜色，开始是clear画的灰色
 
 	//定一个像素，挨个看三角形
-	for (int t = 0; t < p.numTris; ++t) {
+	//只遍历这个块里的三角形
+	for (int i = 0; i < tile.triCount; ++i) {
+		int t = tile.triIndices[i];
 		const TriCached& tc = triCache[t];
 		//包围盒快速剔除
 		if (px < tc.minX || px > tc.maxX || py < tc.minY || py > tc.maxY)
@@ -226,18 +275,23 @@ int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	g_fbWidth = width;
 	g_fbHeight = height;
 	size_t sz = (size_t)width * height;	//总像素数
+	int tilesX = (width + TILE_SIZE - 1) / TILE_SIZE;
+	int tilesY = (height + TILE_SIZE - 1) / TILE_SIZE;
+	g_tilesX = tilesX; 
+	g_tilesY = tilesY;
 
 	// 释放可能已存在的旧缓冲区
 	if (g_dFramebuf) cudaFree(g_dFramebuf);
 	if (g_dDepthbuf) cudaFree(g_dDepthbuf);
-
+	if (g_dTriCache) cudaFree(g_dTriCache);
+	if (g_dTiles) cudaFree(g_dTiles);
 	// 分配新的GPU帧缓冲区和深度缓冲区
 	cudaError_t err1 = cudaMalloc(&g_dFramebuf, sz * sizeof(unsigned int));  // 帧缓冲（BGRA像素）
 	cudaError_t err2 = cudaMalloc(&g_dDepthbuf, sz * sizeof(float));         // 深度缓冲（浮点）
 	cudaError_t err3 = cudaMalloc(&g_dTriCache, 500000 * sizeof(TriCached)); // 预处理数据缓冲，最大50万三角形
-
+	cudaError_t err4 = cudaMalloc(&g_dTiles, tilesX * tilesY * sizeof(TileData));//分块内存
 	// 检查内存分配是否成功
-	if (err1 != cudaSuccess || err2 != cudaSuccess ||err3 != cudaSuccess) return -1;
+	if (err1 != cudaSuccess || err2 != cudaSuccess ||err3 != cudaSuccess|| err4 != cudaSuccess) return -1;
 	return 0;  // 成功
 }
 
@@ -270,7 +324,7 @@ extern "C" CUDA_API
 void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	// 检查GPU缓冲区和输出指针是否有效
 	if (!g_dFramebuf || !g_dDepthbuf || !g_hFramebuf) return;
-	if (!g_dTris || !g_dTriCache) return;
+	if (!g_dTris || !g_dTriCache || !g_dTriCache) return;
 	// 配置CUDA线程网格（每个线程块16×16线程）
 	dim3 block(16, 16);
 	//算需要线程块数，向上取整
@@ -283,12 +337,22 @@ void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	int triBlocks = (params.numTris + 255) / 256;
 	computeTriCacheKernel << <triBlocks, 256 >> > (g_dTriCache, g_dTris, params.numTris, params);
 	cudaDeviceSynchronize();  // 等待预计算完成
-	//第三步：光栅化三角形
+	//第三步：构建分块
+	int tilesX = (params.width + TILE_SIZE - 1) / TILE_SIZE;
+	int tilesY = (params.height + TILE_SIZE - 1) / TILE_SIZE;
+	dim3 tileGrid((tilesX + 15) / 16, (tilesY + 15) / 16);
+	buildTileKernel << <tileGrid, dim3(16, 16) >> > (g_dTiles, g_dTriCache, params.numTris,
+		tilesX, tilesY, params.width, params.height);
+	cudaDeviceSynchronize();
+	//第四步：光栅化三角形
 	rasterizeKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf,
 		g_dTriCache,
 		g_dTris ? g_dTris : nullptr,  // 如果没有三角形，传nullptr
+		g_dTiles, 
+		tilesX,
 		params);
-	//第四步：显存结果拷贝回内存
+	cudaDeviceSynchronize();
+	//第五步：显存结果拷贝回内存
 	cudaMemcpy(g_hFramebuf, g_dFramebuf,
 		(size_t)params.width * params.height * sizeof(unsigned int),
 		cudaMemcpyDeviceToHost);
@@ -312,6 +376,16 @@ void cudaShutdown(void)
 	if (g_dTris) {
 		cudaFree(g_dTris);
 		g_dTris = nullptr;
+	}
+	// 释放预处理缓存
+	if (g_dTriCache) {
+		cudaFree(g_dTriCache);
+		g_dTriCache = nullptr;
+	}
+	// 释放分块
+	if (g_dTiles) { 
+		cudaFree(g_dTiles);
+		g_dTiles = nullptr;
 	}
 	g_numTris = 0;  // 重置三角形计数
 }

@@ -172,6 +172,15 @@ struct TriCached {
     int minX, maxX, minY, maxY; // 屏幕像素包围盒
 };
 
+//二改：屏幕分块：每个块存覆盖它的三角形索引列表
+#define TILE_SIZE 32
+#define MAX_TRIS_PER_TILE 10240  // 每块最多 n 个三角形
+
+struct TileData {
+    int triIndices[MAX_TRIS_PER_TILE];  // 三角形索引
+    int triCount;                        // 实际数量
+};
+
 //DLL引入API（实现在render.cu）
 #ifdef BUILDING_CUDA_DLL    //如果是构建dll
 # define CUDA_API __declspec(dllexport)//就定义为导出函数(微软dll导出表函数标记，标记函数后使dll内指定函数被exe可见)
