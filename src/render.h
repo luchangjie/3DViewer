@@ -168,17 +168,21 @@ struct RenderParams {
 
 //一改：预计算三角形屏幕包围盒 + NDC 坐标
 struct TriCached {
-    float nx[3], ny[3], nz[3];  // NDC 坐标
-    int minX, maxX, minY, maxY; // 屏幕像素包围盒
+    float nx[3], ny[3], nz[3];      // NDC 坐标
+    short minX, maxX, minY, maxY;   // 屏幕像素包围盒
+    float baseR, baseG, baseB;      // 三改：预计算漫反射系数和环境光后的颜色
+    bool flipped;
+    float area;
+    Vec3 normal;
 };
 
 //二改：屏幕分块：每个块存覆盖它的三角形索引列表
 #define TILE_SIZE 16
-#define MAX_TRIS_PER_TILE 20480  // 每块最多 n 个三角形
+#define MAX_TRIS_PER_TILE 20480     // 每块最多 n 个三角形
 
 struct TileData {
-    int triIndices[MAX_TRIS_PER_TILE];  // 三角形索引
-    int triCount;                        // 实际数量
+    int triIdx[MAX_TRIS_PER_TILE];  // 三角形索引
+    int triCount;                   // 实际数量
 };
 
 //DLL引入API（实现在render.cu）
