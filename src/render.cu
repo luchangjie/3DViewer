@@ -13,8 +13,8 @@ static int g_numTris = 0;					//当前三角形数量
 static int g_fbWidth = 0;					//帧缓冲宽度
 static int g_fbHeight = 0;					//帧缓冲高度
 static TriCached* g_dTriCache = nullptr;	//一改，三角形NDC坐标+包围盒
-static TileData* g_dTiles = nullptr;		//二改，分块里的三角形索引和数量
-static int g_tilesX = 0, g_tilesY = 0;		//二改，X和Y方向的分块数
+static TileData* g_dTiles = nullptr;		//二改
+static int g_tilesX = 0, g_tilesY = 0;		//二改
 
 //边函数，屏幕向下看，判断点在线的左or右(正顺右，负逆左)，返回有符号面积（正向屏上，负向屏下）
 __device__ __forceinline__
@@ -22,24 +22,24 @@ float edgeFunc(float ax, float ay, float bx, float by, float px, float py) {
 	return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 }
 
-//一改：提前算好每个三角形的ndc坐标，像素包围盒和基础光照，逐像素时拿现成的判断+计算高光后的光照
+//一改：提前算好每个三角形的ndc坐标和包围盒，逐像素时拿现成的判断+计算光照
 __global__ void computeTriCacheKernel(
 	TriCached* triCache,
 	const GPUTriangle* tris,
 	int numTris,
 	RenderParams p)
 {
-	int t = blockIdx.x * blockDim.x + threadIdx.x;	//三角形编号
-	if (t >= numTris) return;						//多余线程跳过
+	int t = blockIdx.x * blockDim.x + threadIdx.x;
+	if (t >= numTris) return;
 
-	const GPUTriangle& tri = tris[t];				//要处理的三角形
-	TriCached& tc = triCache[t];					//该三角形的ndc，包围盒，基础光照
+	const GPUTriangle& tri = tris[t];
+	TriCached& tc = triCache[t];
 
 	float minX = 1e30f, maxX = -1e30f;
 	float minY = 1e30f, maxY = -1e30f;
 
-	for (int k = 0; k < 3; ++k) {					
-		float vx = tri.v[k].x, vy = tri.v[k].y, vz = tri.v[k].z;	//三顶点模型空间坐标
+	for (int k = 0; k < 3; ++k) {
+		float vx = tri.v[k].x, vy = tri.v[k].y, vz = tri.v[k].z;
 
 		float cx = p.mvp.m[0][0] * vx + p.mvp.m[1][0] * vy + p.mvp.m[2][0] * vz + p.mvp.m[3][0];
 		float cy = p.mvp.m[0][1] * vx + p.mvp.m[1][1] * vy + p.mvp.m[2][1] * vz + p.mvp.m[3][1];
@@ -47,68 +47,25 @@ __global__ void computeTriCacheKernel(
 		float cw = p.mvp.m[0][3] * vx + p.mvp.m[1][3] * vy + p.mvp.m[2][3] * vz + p.mvp.m[3][3];
 
 		if (cw <= 0.f) {
-			tc.nx[k] = -2.f; tc.ny[k] = -2.f; tc.nz[k] = 2.f;		//设为点在屏幕外
-			minX = -2.f; maxX = -2.f; minY = -2.f; maxY = -2.f;		//包围盒在屏幕外，跳过
+			tc.nx[k] = -2.f; tc.ny[k] = -2.f; tc.nz[k] = 2.f;
+			minX = -2.f; maxX = -2.f; minY = -2.f; maxY = -2.f;
 			continue;
 		}
-		//透视除法
+
 		tc.nx[k] = cx / cw;
 		tc.ny[k] = cy / cw;
 		tc.nz[k] = cz / cw;
-		//ndc空间的包围盒
+
 		minX = fminf(minX, tc.nx[k]);
 		maxX = fmaxf(maxX, tc.nx[k]);
 		minY = fminf(minY, tc.ny[k]);
 		maxY = fmaxf(maxY, tc.ny[k]);
 	}
-	//屏幕像素包围盒
-	tc.minX = fmaxf(0, fminf(p.width - 1, (int)((minX + 1.0f) * 0.5f * p.width)-1));
-	tc.maxX = fmaxf(0, fminf(p.width - 1, (int)((maxX + 1.0f) * 0.5f * p.width)+1));
+
+	tc.minX = fmaxf(0, fminf(p.width - 1, (int)((minX + 1.0f) * 0.5f * p.width)));
+	tc.maxX = fmaxf(0, fminf(p.width - 1, (int)((maxX + 1.0f) * 0.5f * p.width)));
 	tc.minY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - maxY) * 0.5f * p.height)));
 	tc.maxY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - minY) * 0.5f * p.height)));
-
-	// 计算背面标记和面积（用于后面判断）
-	float area = edgeFunc(tc.nx[0], tc.ny[0], tc.nx[1], tc.ny[1], tc.nx[2], tc.ny[2]);
-	tc.flipped = (area < 0.f);
-	tc.area = fabsf(area);
-
-	Vec3 N = tri.normal;				//三角形面法线
-	if (tc.flipped) { N = -N; }			//背面光照：使用相反法线
-	tc.normal = N;						//缓存法线
-
-	//基础光计算
-	//提前把0-255转换成0.0-1.0
-	float baseR = tri.color[0] / 255.f;  //基础红色分量
-	float baseG = tri.color[1] / 255.f;  //基础绿色分量
-	float baseB = tri.color[2] / 255.f;  //基础蓝色分量
-
-	//漫反射
-	Vec3 L = p.lightDir;				 //光照方向,指向光源
-	float keyDiff = fmaxf(N.dot(L), 0.f);//漫反射系数（值越大越亮，范围0-1，负数被0.f钳制到0）
-
-	//补光
-	Vec3 fillDir = { -0.4f, -0.3f, 0.6f };					// 补光方向
-	float fillDiff = fmaxf(N.dot(fillDir.norm()), 0.f);		// 补光漫反射系数
-
-	//半球环境光,朝上亮，朝下暗
-	float hemi = 0.7f + 0.3f * N.y;
-
-	// 预计算基础色（高光除外，因为高光依赖视角/像素位置）
-	tc.baseR = fminf(1.f,								//光照为1或者
-		p.ambient.x * (0.8f + 0.2f * hemi) * baseR		//环境光
-		+ keyDiff * p.lightColor.x * baseR * 0.85f		//漫反射主光
-		+ fillDiff * 0.35f * baseR						//补光
-	);
-	tc.baseG = fminf(1.f,
-		p.ambient.y * (0.8f + 0.2f * hemi) * baseG
-		+ keyDiff * p.lightColor.y * baseG * 0.85f
-		+ fillDiff * 0.3f * baseG
-	);
-	tc.baseB = fminf(1.f,
-		p.ambient.z * (0.8f + 0.2f * hemi) * baseB
-		+ keyDiff * p.lightColor.z * baseB * 0.85f
-		+ fillDiff * 0.4f * baseB
-	);
 }
 
 //二改：分块构建内核
@@ -142,7 +99,7 @@ __global__ void buildTileKernel(
 			tc.maxY < tileMinY || tc.minY > tileMaxY)
 			continue;
 
-		tile.triIdx[tile.triCount++] = t;
+		tile.triIndices[tile.triCount++] = t;
 	}
 }
 
@@ -151,10 +108,10 @@ __global__
 void rasterizeKernel(
 	unsigned int* framebuf,	
 	float* depthbuf,
-	const TriCached* triCache,  // 一改,三角形ndc，包围盒，基础光数组
+	const TriCached* triCache,  // 一改
 	const GPUTriangle* tris,
-	const TileData* tiles,		// 二改，块数组，存块里的三角形索引和数量
-	int tilesX,					// 二改，X方向分块数量
+	const TileData* tiles,		// 二改
+	int tilesX,					// 二改
 	RenderParams p			
 ) {
 	int px = blockIdx.x * blockDim.x + threadIdx.x;//屏幕x坐标像素
@@ -166,7 +123,7 @@ void rasterizeKernel(
 	int ty = py / TILE_SIZE;
 	int tileIdx = ty * tilesX + tx;
 	const TileData& tile = tiles[tileIdx];
-	// 背景块：没有三角形覆盖,直接返回
+	// 背景块：没有三角形覆盖 → 直接返回
 	if (tile.triCount == 0) return;
 
 	int idx = py * p.width + px;//像素索引
@@ -181,20 +138,22 @@ void rasterizeKernel(
 	//定一个像素，挨个看三角形
 	//只遍历这个块里的三角形
 	for (int i = 0; i < tile.triCount; ++i) {
-		int t = tile.triIdx[i];
+		int t = tile.triIndices[i];
 		const TriCached& tc = triCache[t];
 		//包围盒快速剔除
 		if (px < tc.minX || px > tc.maxX || py < tc.minY || py > tc.maxY)
             continue;
-
-		// 退化三角形剔除（面积为零，跳过）
-		if (tc.area == 0.f) continue;  
+		//背面剔除
+		float area = edgeFunc(tc.nx[0], tc.ny[0], tc.nx[1], tc.ny[1], tc.nx[2], tc.ny[2]);
+		if (area == 0.f) continue;  // 退化三角形（面积为零，跳过）
 
 		float nx0 = tc.nx[0], ny0 = tc.ny[0], nz0 = tc.nz[0];
 		float nx1 = tc.nx[1], ny1 = tc.ny[1], nz1 = tc.nz[1];
 		float nx2 = tc.nx[2], ny2 = tc.ny[2], nz2 = tc.nz[2];
 
-		if (tc.flipped) {
+		bool flipped = (area < 0.f);//看到背面
+		if (flipped) {
+			area = -area;  // 取绝对值
 			// 交换顶点0和顶点2的标签，翻转面朝向，保证点都顺时针，便于用w>=0判断在内部
 			float tmp;
 			tmp = nx0; nx0 = nx2; nx2 = tmp;  // 交换X坐标
@@ -203,8 +162,8 @@ void rasterizeKernel(
 		}
 		
 		//细：重心坐标计算比较（权重和为1，而且面积占的越大离相应点越近，w也能反映距离）
-		float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / tc.area;	//顶点 V0 的权重 = P 到对边 V1-V2 的距离比例
-		float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / tc.area;	//顶点 V1 的权重 = P 到对边 V2-V0 的距离比例
+		float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / area;	//顶点 V0 的权重 = P 到对边 V1-V2 的距离比例
+		float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / area;	//顶点 V1 的权重 = P 到对边 V2-V0 的距离比例
 		float w2 = 1.f - w0 - w1;									//剩下的权重
 		if (w0 < 0.f || w1 < 0.f || w2 < 0.f) continue;				//有负，则在三角形外部，跳过该三角形
 
@@ -215,21 +174,56 @@ void rasterizeKernel(
 		}
 		//深度测试
 		float z = w0 * nz0 + w1 * nz1 + w2 * nz2;	//三点深度换成三角形深度
-		if (z >= bestZ) continue;   //被更近的遮挡，不渲染
+		if (z >= bestZ) continue;  //被更近的遮挡，不渲染
 		bestZ = z;                  // 更新最佳深度值
+
 
 		//Blinn_Phong光照
 		const GPUTriangle& tri = tris[t];
-		Vec3 N = tc.normal;
+		//提前把0-255转换成0.0-1.0
+		float baseR = tri.color[0] / 255.f;  //基础红色分量
+		float baseG = tri.color[1] / 255.f;  //基础绿色分量
+		float baseB = tri.color[2] / 255.f;  //基础蓝色分量
+		
+		Vec3 N = tri.normal;				 //三角形面法线
+		if (flipped) { N = -N; }			 //背面光照：使用相反法线
+
+		//漫反射
+		Vec3 L = p.lightDir;				 //光照方向,指向光源
+		float keyDiff = fmaxf(N.dot(L), 0.f);//漫反射系数（值越大越亮，范围0-1，负数被0.f钳制到0）
+
 		//高光
-		Vec3 L = p.lightDir;
 		Vec3 V = { 0.f,0.f,1.f };	//观察方向，看向屏幕外
 		Vec3 H = (L + V).norm();	//半程向量
 		float spec = powf(fmaxf(N.dot(H), 0.f), p.specPower);  // 高光强度（指数控制高光集中度）
+
+		//补光
+		Vec3 fillDir = { -0.4f, -0.3f, 0.6f };					// 补光方向
+		float fillDiff = fmaxf(N.dot(fillDir.norm()), 0.f);		// 补光漫反射系数
+
+		//半球环境光,朝上亮，朝下暗
+		float hemi = 0.7f + 0.3f * N.y;
+
 		//合成光照，3通道分别合成
-		float r = fminf(1.f, tc.baseR + spec * 0.4f);
-		float g = fminf(1.f, tc.baseG + spec * 0.4f);
-		float b = fminf(1.f, tc.baseB + spec * 0.4f);
+		float r = fminf(1.f,								//光照为1或者
+			p.ambient.x * (0.8f + 0.2f * hemi) * baseR		//环境光
+			+ keyDiff * p.lightColor.x * baseR * 0.85f		//漫反射主光
+			+ fillDiff * 0.35 * baseR						//补光
+			+ spec * 0.4f									//高光
+		);
+		float g = fminf(1.f,
+			p.ambient.y * (0.8f + 0.2f * hemi) * baseG
+			+ keyDiff * p.lightColor.y * baseG * 0.85f
+			+ fillDiff * 0.3f * baseG
+			+ spec * 0.4f
+		);
+		float b = fminf(1.f,
+			p.ambient.z * (0.8f + 0.2f * hemi) * baseB
+			+ keyDiff * p.lightColor.z * baseB * 0.85f
+			+ fillDiff * 0.4f * baseB
+			+ spec * 0.4f
+		);
+
 		//打包成BGRA（Windows DIB标准）,浮点RGB的0-1转为32位二进制,用unsigned int位运算
 		bestColor=0xFF000000u					// 透明度FF决定不透明（最高位）
 			| ((unsigned int)(b * 255) << 16)   // 蓝色分量（高位）
@@ -330,7 +324,7 @@ extern "C" CUDA_API
 void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	// 检查GPU缓冲区和输出指针是否有效
 	if (!g_dFramebuf || !g_dDepthbuf || !g_hFramebuf) return;
-	if (!g_dTris || !g_dTriCache || !g_dTiles) return;
+	if (!g_dTris || !g_dTriCache || !g_dTriCache) return;
 	// 配置CUDA线程网格（每个线程块16×16线程）
 	dim3 block(16, 16);
 	//算需要线程块数，向上取整
