@@ -19,20 +19,24 @@
 #include<cfloat>
 #include<string>
 #include"render.h"
+#include <algorithm>            // 三改：用于 std::nth_element 构建 BVH
+#include <vector>               // 三改：BVH 节点容器
 
 int loadOBJ(const char* path, GPUTriangle*& triangles);	        //在obj_loader.cpp
 int loadVoxelObj(const char* path, GPUTriangle*& triangles);    //在voxel_loader.cpp
 
 typedef int (*cudaInit_t)(int, int, char*, int);
-typedef void (*cudaUploadTriangles_t)(const GPUTriangle*, int);  
+typedef void (*cudaUploadTriangles_t)(const GPUTriangle*, int);
 typedef void (*cudaRender_t)(const RenderParams&, unsigned int*);
-typedef void (*cudaShutdown_t)(void);                            
+typedef void (*cudaShutdown_t)(void);
+typedef void (*cudaUploadBVH_t)(const BVHNode*, int);           //三改
 
 //全局指针变量（通过GetProcAddress获取DLL中函数地址），分别指向dll的4个函数
 static cudaInit_t				p_cudaInit = nullptr;
 static cudaUploadTriangles_t	p_cudaUploadTriangles = nullptr;
 static cudaRender_t				p_cudaRender = nullptr;
 static cudaShutdown_t			 p_cudaShutdown = nullptr;
+static cudaUploadBVH_t      p_cudaUploadBVH = nullptr;  // 三改：上传 BVH 到显存的函数
 
 //全局常量
 static const int	WIN_W = 900;	//窗口宽
@@ -40,12 +44,14 @@ static const int	WIN_H = 700;	//窗口高
 static const float	FOV_Y = 60.f * 3.14159265f / 180.f;	//垂直视场角（弧度制）
 static const float	Z_NEAR = 0.1f;	//近裁剪面
 static const float  Z_FAR = 100.f;	// 远裁剪面距离
+static std::vector<BVHNode> g_hBVH;                   // 三改：CPU 端 BVH 节点数组
+static int                  g_numBVHNodes = 0;        // 三改：BVH 节点数量
 
 static HMODULE g_hKernel = nullptr;	//windows句柄类型
 
 //加载DLL并获取所有CUDA函数指针，初始化
 static bool initRenderer() {
-	g_hKernel = LoadLibraryA("render_kernel.dll");	//Windows给dll的句柄
+    g_hKernel = LoadLibraryA("render_kernel.dll");	//Windows给dll的句柄
     if (!g_hKernel) {
         // 加载失败：显示错误消息框
         MessageBoxA(nullptr,
@@ -55,10 +61,11 @@ static bool initRenderer() {
     }
     //调用GetProcAddress获取dll里的函数，图省事用了宏，##拼，#单独
 #define LOAD_SYM(name) p_##name = (name##_t)GetProcAddress(g_hKernel, #name)
-    LOAD_SYM(cudaInit);            
+    LOAD_SYM(cudaInit);
+    LOAD_SYM(cudaUploadBVH);
     LOAD_SYM(cudaUploadTriangles);
-    LOAD_SYM(cudaRender);          
-    LOAD_SYM(cudaShutdown);        
+    LOAD_SYM(cudaRender);
+    LOAD_SYM(cudaShutdown);
 #undef LOAD_SYM
     //检查函数是否加载成功
     if (!p_cudaInit || !p_cudaRender || !p_cudaShutdown) {
@@ -83,8 +90,8 @@ static bool initRenderer() {
 }
 //-------------------------------------------------------------------
 //全局状态变量
-static unsigned int*    g_hFramebuf = nullptr;  // 指向DIB像素数据的指针
-static GPUTriangle*     g_hTris = nullptr;      // 三角形数组（主机端）
+static unsigned int* g_hFramebuf = nullptr;  // 指向DIB像素数据的指针
+static GPUTriangle* g_hTris = nullptr;       // 三角形数组（主机端）
 static int              g_numTris = 0;          // 三角形数量
 static float     g_rotX = 0.3f;                 // 摄像机绕X轴旋转角度（弧度）
 static float     g_rotY = 0.5f;                 // 摄相机绕Y轴旋转角度（弧度）
@@ -116,24 +123,144 @@ static std::string openFileDialog(HWND owner) {
     return GetOpenFileNameA(&ofn) ? std::string(buf) : "";  //打开文件选择窗口（判断条件：“打开”则返回true，return字符串）
 }
 //-------------------------------------------------------------------
+// 三改：BVH 构建辅助结构：记录每个三角形的 AABB 与中心点
+struct BVHBuildTri {
+    int  origIdx;            // 原始三角形索引（重排前）
+    Vec3 center;             // 包围盒中心
+    Vec3 bmin, bmax;         // 轴对齐包围盒
+};
+// 递归构建 BVH，返回节点在 outNodes 中的索引
+// 构建完成后，tris 数组会被原地重排，使得叶子节点的三角形连续存放
+static int buildBVHRecursive(std::vector<BVHBuildTri>& buildTris,
+    int start, int end,
+    std::vector<BVHNode>& outNodes)
+{
+    // 【关键】先记录当前节点的索引，再 emplace，避免引用失效
+    int nodeIdx = (int)outNodes.size();
+    outNodes.emplace_back();            // 分配新节点，但不再持有引用
+    // 必须通过 outNodes[nodeIdx] 访问，不能用引用缓存
+
+    // 计算当前区间 [start, end) 内所有三角形的联合 AABB
+    Vec3 lo(FLT_MAX, FLT_MAX, FLT_MAX);
+    Vec3 hi(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    for (int i = start; i < end; ++i) {
+        lo.x = fminf(lo.x, buildTris[i].bmin.x);
+        lo.y = fminf(lo.y, buildTris[i].bmin.y);
+        lo.z = fminf(lo.z, buildTris[i].bmin.z);
+        hi.x = fmaxf(hi.x, buildTris[i].bmax.x);
+        hi.y = fmaxf(hi.y, buildTris[i].bmax.y);
+        hi.z = fmaxf(hi.z, buildTris[i].bmax.z);
+    }
+    // 【改】通过索引访问，而非引用
+    outNodes[nodeIdx].minX = lo.x;
+    outNodes[nodeIdx].minY = lo.y;
+    outNodes[nodeIdx].minZ = lo.z;
+    outNodes[nodeIdx].maxX = hi.x;
+    outNodes[nodeIdx].maxY = hi.y;
+    outNodes[nodeIdx].maxZ = hi.z;
+
+    int count = end - start;
+    const int LEAF_MAX = 8;
+
+    if (count <= LEAF_MAX) {
+        // 叶子节点
+        outNodes[nodeIdx].left = -1;
+        outNodes[nodeIdx].right = -1;
+        outNodes[nodeIdx].triStart = start;
+        outNodes[nodeIdx].triCount = count;
+        return nodeIdx;
+    }
+
+    // 内部节点：按最长轴分割
+    Vec3 extent = hi - lo;
+    int axis = 0;
+    if (extent.y > extent.x) axis = 1;
+    if (extent.z > (axis == 0 ? extent.x : extent.y)) axis = 2;
+
+    int mid = start + count / 2;
+    std::nth_element(buildTris.begin() + start,
+        buildTris.begin() + mid,
+        buildTris.begin() + end,
+        [axis](const BVHBuildTri& a, const BVHBuildTri& b) {
+            float av = (axis == 0) ? a.center.x : (axis == 1) ? a.center.y : a.center.z;
+            float bv = (axis == 0) ? b.center.x : (axis == 1) ? b.center.y : b.center.z;
+            return av < bv;
+        });
+
+    // 【关键】递归前先记录，递归后通过索引赋值
+    // 递归可能再次触发 emplace_back，但 nodeIdx 指向的旧位置仍然有效
+    int leftIdx = buildBVHRecursive(buildTris, start, mid, outNodes);
+    int rightIdx = buildBVHRecursive(buildTris, mid, end, outNodes);
+
+    outNodes[nodeIdx].left = leftIdx;
+    outNodes[nodeIdx].right = rightIdx;
+    outNodes[nodeIdx].triStart = -1;
+    outNodes[nodeIdx].triCount = 0;
+    return nodeIdx;
+}
+// 对外接口：为三角形数组构建 BVH，并原地重排三角形顺序
+// 重排后，BVH 叶子节点的 triStart 直接对应 tris 数组下标，无需二次映射
+static void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes)
+{
+    outNodes.clear();
+    if (numTris <= 0) return;
+
+    // 1. 先为每个三角形计算 AABB 与中心
+    std::vector<BVHBuildTri> buildTris(numTris);
+    for (int i = 0; i < numTris; ++i) {
+        const GPUTriangle& tri = tris[i];
+        Vec3 lo = { fminf(tri.v[0].x, fminf(tri.v[1].x, tri.v[2].x)),
+                    fminf(tri.v[0].y, fminf(tri.v[1].y, tri.v[2].y)),
+                    fminf(tri.v[0].z, fminf(tri.v[1].z, tri.v[2].z)) };
+        Vec3 hi = { fmaxf(tri.v[0].x, fmaxf(tri.v[1].x, tri.v[2].x)),
+                    fmaxf(tri.v[0].y, fmaxf(tri.v[1].y, tri.v[2].y)),
+                    fmaxf(tri.v[0].z, fmaxf(tri.v[1].z, tri.v[2].z)) };
+        buildTris[i].origIdx = i;
+        buildTris[i].bmin = lo;
+        buildTris[i].bmax = hi;
+        buildTris[i].center = (lo + hi) * 0.5f;
+    }
+
+    // 2. 递归构建 BVH（节点写入 outNodes，同时确定重排顺序）
+    buildBVHRecursive(buildTris, 0, numTris, outNodes);
+
+    // 3. 按 buildTris 的顺序原地重排原始三角形数组
+    //    使得 BVH 叶子中记录的 triStart/triCount 直接指向连续内存
+    std::vector<GPUTriangle> temp(numTris);
+    for (int i = 0; i < numTris; ++i) {
+        temp[i] = tris[buildTris[i].origIdx];
+    }
+    for (int i = 0; i < numTris; ++i) {
+        tris[i] = temp[i];
+    }
+}
+//-------------------------------------------------------------------
 //加载obj并上传至GPU
 static void loadModel(const std::string& path) {
     // 释放旧的三角形数据
     delete[] g_hTris;
     g_hTris = nullptr;
     g_numTris = 0;
-
+    g_hBVH.clear();                 // 三改：清空旧 BVH
     g_currentModelPath = path;      //记录路径
     // 如果路径非空，解析OBJ文件(两种方式)
     if (!path.empty()) {
-        if(g_voxelMode)
+        if (g_voxelMode)
             g_numTris = loadVoxelObj(path.c_str(), g_hTris);
         else
             g_numTris = loadOBJ(path.c_str(), g_hTris); //string转为char*作实参
     }
+    // 三改：若加载成功，原地构建 BVH 并上传 GPU
+    if (g_numTris > 0) {
+        buildBVH(g_hTris, g_numTris, g_hBVH);
+        g_numBVHNodes = (int)g_hBVH.size();
+    }
     // 将三角形数据上传到GPU显存
     if (p_cudaUploadTriangles)
         p_cudaUploadTriangles(g_hTris, g_numTris);
+    // 三改：上传 BVH 节点到显存
+    if (p_cudaUploadBVH && g_numBVHNodes > 0)
+        p_cudaUploadBVH(g_hBVH.data(), g_numBVHNodes);
     // 重置摄像机到默认视角
     g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.5f;
 }
@@ -170,7 +297,7 @@ static void renderFrame() {
     // 构建模型矩阵（先绕Y轴旋转，再绕X轴旋转）
     Mat4 model = Mat4::rotateX(g_rotX) * Mat4::rotateY(g_rotY);
     //摄像机位置
-    Vec3 eye = { g_panX, g_panY, g_zoom };  
+    Vec3 eye = { g_panX, g_panY, g_zoom };
     Vec3 center = { g_panX, g_panY, 0.f };      //摄像机和中心是连线的，所以要一起平移
     //构建视图矩阵
     Mat4 view = Mat4::lookAt(eye, center, { 0,1,0 });
@@ -211,7 +338,7 @@ static void renderFrame() {
     const char* modeStr = g_voxelMode ? "Voxel" : (g_wireframe ? "Wire" : "Solid");
     snprintf(title, sizeof(title),
         "3DViewer  |  Tris: %d  |  FPS: %.1f  |  Mode: %s  |  [W]Wire [V]Voxel [O]Open [R]Reset",
-        g_numTris,fps, modeStr);
+        g_numTris, fps, modeStr);
     SetWindowTextA(g_hwnd, title);
 }
 
@@ -233,7 +360,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         else if (wp == 'V') {           // V键：切换体素模式
             g_voxelMode = !g_voxelMode;
-            loadModel(g_currentModelPath);       
+            loadModel(g_currentModelPath);
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wp == 'R') {           // R键：重置摄像机
@@ -262,7 +389,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         SetCapture(hwnd);
         return 0;
     }
-    case WM_MOUSEMOVE: {               
+    case WM_MOUSEMOVE: {
         if (g_dragging) {           // 左键移动
             int mx = LOWORD(lp), my = HIWORD(lp);  // 当前鼠标位置
             float dx = (mx - g_lastMX) * 0.008f;   // 水平移动增量（转换为旋转量）
@@ -280,7 +407,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             float dx = (mx - g_lastMX) * 0.003f;  // 灵敏度
             float dy = (my - g_lastMY) * 0.003f;
             g_panX -= dx;
-            g_panY += dy;  
+            g_panY += dy;
             g_lastMX = mx; g_lastMY = my;
             InvalidateRect(hwnd, nullptr, FALSE);
         }
@@ -325,7 +452,7 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     HINSTANCE,                      //过时的东西，永远为空
     LPSTR lpCmdLine,                //命令行参数，暂时没用
     int nShow)                      //窗口初始显示方式（最大化，最小化，正常）
-{                     
+{
     // 分配控制台窗口（用于显示printf的调试信息）
     AllocConsole();
     freopen("CONOUT$", "w", stdout);   // 重定向标准输出到控制台

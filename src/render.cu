@@ -1,4 +1,4 @@
-﻿//===================================================================
+//===================================================================
 //render.cu - CUDA光栅化+内存管理
 //===================================================================
 #include "render.h"
@@ -15,6 +15,8 @@ static int g_fbHeight = 0;					//帧缓冲高度
 static TriCached* g_dTriCache = nullptr;	//一改，三角形NDC坐标+包围盒
 static TileData* g_dTiles = nullptr;		//二改，分块里的三角形索引和数量
 static int g_tilesX = 0, g_tilesY = 0;		//二改，X和Y方向的分块数
+static BVHNode* g_dBVH = nullptr;			// 三改：设备端 BVH 节点数组指针
+static int      g_numBVHNodes = 0;			// 三改：设备端 BVH 节点数量
 
 //边函数，屏幕向下看，判断点在线的左or右(正顺右，负逆左)，返回有符号面积（正向屏上，负向屏下）
 __device__ __forceinline__
@@ -38,7 +40,7 @@ __global__ void computeTriCacheKernel(
 	float minX = 1e30f, maxX = -1e30f;
 	float minY = 1e30f, maxY = -1e30f;
 
-	for (int k = 0; k < 3; ++k) {					
+	for (int k = 0; k < 3; ++k) {
 		float vx = tri.v[k].x, vy = tri.v[k].y, vz = tri.v[k].z;	//三顶点模型空间坐标
 
 		float cx = p.mvp.m[0][0] * vx + p.mvp.m[1][0] * vy + p.mvp.m[2][0] * vz + p.mvp.m[3][0];
@@ -62,8 +64,8 @@ __global__ void computeTriCacheKernel(
 		maxY = fmaxf(maxY, tc.ny[k]);
 	}
 	//屏幕像素包围盒
-	tc.minX = fmaxf(0, fminf(p.width - 1, (int)((minX + 1.0f) * 0.5f * p.width)-1));
-	tc.maxX = fmaxf(0, fminf(p.width - 1, (int)((maxX + 1.0f) * 0.5f * p.width)+1));
+	tc.minX = fmaxf(0, fminf(p.width - 1, (int)((minX + 1.0f) * 0.5f * p.width) - 1));
+	tc.maxX = fmaxf(0, fminf(p.width - 1, (int)((maxX + 1.0f) * 0.5f * p.width) + 1));
 	tc.minY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - maxY) * 0.5f * p.height)));
 	tc.maxY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - minY) * 0.5f * p.height)));
 
@@ -110,14 +112,65 @@ __global__ void computeTriCacheKernel(
 		+ fillDiff * 0.4f * baseB
 	);
 }
+// 三改：将 BVH 节点的模型空间 AABB 经 MVP 矩阵保守投影到屏幕像素空间
+// 返回 true  表示节点至少部分位于视锥内（可能在屏幕上可见）
+// 返回 false 表示 8 个角点全部在相机后方，可安全剔除
+__device__ bool nodeScreenBounds(const BVHNode& node, const Mat4& mvp,
+	int width, int height,
+	int& outMinX, int& outMaxX, int& outMinY, int& outMaxY)
+{
+	float minX = 1e30f, maxX = -1e30f;
+	float minY = 1e30f, maxY = -1e30f;
+	bool anyFront = false;
 
-//二改：分块构建内核
+	// AABB 的 8 个角点坐标（模型空间）
+	float cx[8] = { node.minX, node.maxX, node.minX, node.maxX,
+					node.minX, node.maxX, node.minX, node.maxX };
+	float cy[8] = { node.minY, node.minY, node.maxY, node.maxY,
+					node.minY, node.minY, node.maxY, node.maxY };
+	float cz[8] = { node.minZ, node.minZ, node.minZ, node.minZ,
+					node.maxZ, node.maxZ, node.maxZ, node.maxZ };
+
+	for (int i = 0; i < 8; ++i) {
+		float x = cx[i], y = cy[i], z = cz[i];
+		// MVP 变换到裁剪空间
+		float wx = mvp.m[0][0] * x + mvp.m[1][0] * y + mvp.m[2][0] * z + mvp.m[3][0];
+		float wy = mvp.m[0][1] * x + mvp.m[1][1] * y + mvp.m[2][1] * z + mvp.m[3][1];
+		float wz = mvp.m[0][2] * x + mvp.m[1][2] * y + mvp.m[2][2] * z + mvp.m[3][2];
+		float ww = mvp.m[0][3] * x + mvp.m[1][3] * y + mvp.m[2][3] * z + mvp.m[3][3];
+
+		if (ww <= 0.0f) continue;   // 角点在相机后方，保守跳过（不扩展边界）
+		anyFront = true;
+
+		// 透视除法 -> NDC -> 屏幕像素（Y 轴翻转，使左上角为原点）
+		float ndcX = wx / ww;
+		float ndcY = wy / ww;
+		float sx = (ndcX + 1.0f) * 0.5f * width;
+		float sy = (1.0f - ndcY) * 0.5f * height;
+
+		minX = fminf(minX, sx); maxX = fmaxf(maxX, sx);
+		minY = fminf(minY, sy); maxY = fmaxf(maxY, sy);
+	}
+
+	if (!anyFront) return false; // 全部在相机后方，视为不可见
+
+	// 向外扩展 1 像素，确保保守性
+	outMinX = fmaxf(0, (int)floorf(minX) - 1);
+	outMaxX = fminf(width - 1, (int)ceilf(maxX) + 1);
+	outMinY = fmaxf(0, (int)floorf(minY) - 1);
+	outMaxY = fminf(height - 1, (int)ceilf(maxY) + 1);
+	return true;
+}
+//二改：分块构建内核（三改：BVH剔除远三角形分支）
 __global__ void buildTileKernel(
 	TileData* tiles,
 	const TriCached* triCache,
 	int numTris,
 	int tilesX, int tilesY,
-	int width, int height)
+	int width, int height,
+	const Mat4 mvp,				// 三改：MVP 矩阵，用于将 BVH 节点投影到屏幕
+	const BVHNode* bvhNodes,    // 三改参数
+	int numBVHNodes)            // 三改参数
 {
 	int tx = blockIdx.x * blockDim.x + threadIdx.x;
 	int ty = blockIdx.y * blockDim.y + threadIdx.y;
@@ -127,13 +180,14 @@ __global__ void buildTileKernel(
 	TileData& tile = tiles[tileIdx];
 	tile.triCount = 0;
 
-	// 块的像素范围
+	// 当前块的像素范围
 	int tileMinX = tx * TILE_SIZE;
 	int tileMaxX = fminf((tx + 1) * TILE_SIZE - 1, width - 1);
 	int tileMinY = ty * TILE_SIZE;
 	int tileMaxY = fminf((ty + 1) * TILE_SIZE - 1, height - 1);
 
-	// 遍历所有三角形，找出覆盖这个块的
+	// 若 BVH 未上传（兼容旧逻辑），回退到暴力遍历，找出覆盖该块的三角形
+	if (!bvhNodes || numBVHNodes == 0) {
 	for (int t = 0; t < numTris && tile.triCount < MAX_TRIS_PER_TILE; ++t) {
 		const TriCached& tc = triCache[t];
 
@@ -144,18 +198,56 @@ __global__ void buildTileKernel(
 
 		tile.triIdx[tile.triCount++] = t;
 	}
+	return;
+}// BVH 栈遍历：只访问可能与该 Tile 屏幕区域相交的节点
+	int stack[64];   // 显式栈，深度足以容纳 2^64 节点（实际 log2(N) 通常 < 25）
+	int sp = 0;
+	stack[sp++] = 0; // 根节点索引固定为 0
+
+	while (sp > 0 && tile.triCount < MAX_TRIS_PER_TILE) {
+		int nodeIdx = stack[--sp];
+		const BVHNode& node = bvhNodes[nodeIdx];
+
+		// 1. 计算该节点在屏幕上的保守包围盒
+		int nMinX, nMaxX, nMinY, nMaxY;
+		if (!nodeScreenBounds(node, mvp, width, height, nMinX, nMaxX, nMinY, nMaxY))
+			continue; // 完全在视锥外或相机后方，整棵子树剔除
+
+		// 2. 节点包围盒与 Tile 无交集？剪枝
+		if (nMaxX < tileMinX || nMinX > tileMaxX ||
+			nMaxY < tileMinY || nMinY > tileMaxY)
+			continue;
+
+		if (node.triCount > 0) {
+			// 3. 叶子节点：用精确的三角形屏幕包围盒二次过滤后加入 Tile
+			for (int i = 0; i < node.triCount && tile.triCount < MAX_TRIS_PER_TILE; ++i) {
+				int t = node.triStart + i;
+				if (t < 0 || t >= numTris) continue; // 防御性检查
+				const TriCached& tc = triCache[t];
+				if (tc.maxX < tileMinX || tc.minX > tileMaxX ||
+					tc.maxY < tileMinY || tc.minY > tileMaxY)
+					continue;
+				tile.triIdx[tile.triCount++] = t;
+			}
+		}
+		else {
+			// 4. 内部节点：将子节点压栈（先右后左，使左子树先被处理）
+			if (node.right >= 0) stack[sp++] = node.right;
+			if (node.left >= 0) stack[sp++] = node.left;
+		}
+	}
 }
 
 //主光栅化，对于每个像素
 __global__
 void rasterizeKernel(
-	unsigned int* framebuf,	
+	unsigned int* framebuf,
 	float* depthbuf,
 	const TriCached* triCache,  // 一改,三角形ndc，包围盒，基础光数组
 	const GPUTriangle* tris,
 	const TileData* tiles,		// 二改，块数组，存块里的三角形索引和数量
 	int tilesX,					// 二改，X方向分块数量
-	RenderParams p			
+	RenderParams p
 ) {
 	int px = blockIdx.x * blockDim.x + threadIdx.x;//屏幕x坐标像素
 	int py = blockIdx.y * blockDim.y + threadIdx.y;//屏幕y坐标像素
@@ -172,7 +264,7 @@ void rasterizeKernel(
 	int idx = py * p.width + px;//像素索引
 
 	//+0.5选像素中心，然后归一化到NDC空间
-	float ndcX= (px + 0.5f) / p.width * 2.f - 1.f;
+	float ndcX = (px + 0.5f) / p.width * 2.f - 1.f;
 	float ndcY = 1.f - (py + 0.5f) / p.height * 2.f;
 
 	float bestZ = depthbuf[idx];			//最前边的深度值，开始是FLT_MAX
@@ -185,10 +277,10 @@ void rasterizeKernel(
 		const TriCached& tc = triCache[t];
 		//包围盒快速剔除
 		if (px < tc.minX || px > tc.maxX || py < tc.minY || py > tc.maxY)
-            continue;
+			continue;
 
 		// 退化三角形剔除（面积为零，跳过）
-		if (tc.area == 0.f) continue;  
+		if (tc.area == 0.f) continue;
 
 		float nx0 = tc.nx[0], ny0 = tc.ny[0], nz0 = tc.nz[0];
 		float nx1 = tc.nx[1], ny1 = tc.ny[1], nz1 = tc.nz[1];
@@ -201,7 +293,7 @@ void rasterizeKernel(
 			tmp = ny0; ny0 = ny2; ny2 = tmp;  // 交换Y坐标
 			tmp = nz0; nz0 = nz2; nz2 = tmp;  // 交换Z坐标
 		}
-		
+
 		//细：重心坐标计算比较（权重和为1，而且面积占的越大离相应点越近，w也能反映距离）
 		float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / tc.area;	//顶点 V0 的权重 = P 到对边 V1-V2 的距离比例
 		float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / tc.area;	//顶点 V1 的权重 = P 到对边 V2-V0 的距离比例
@@ -231,7 +323,7 @@ void rasterizeKernel(
 		float g = fminf(1.f, tc.baseG + spec * 0.4f);
 		float b = fminf(1.f, tc.baseB + spec * 0.4f);
 		//打包成BGRA（Windows DIB标准）,浮点RGB的0-1转为32位二进制,用unsigned int位运算
-		bestColor=0xFF000000u					// 透明度FF决定不透明（最高位）
+		bestColor = 0xFF000000u					// 透明度FF决定不透明（最高位）
 			| ((unsigned int)(b * 255) << 16)   // 蓝色分量（高位）
 			| ((unsigned int)(g * 255) << 8)	// 绿色分量（中位）
 			| ((unsigned int)(r * 255));        // 红色分量（低位）
@@ -283,7 +375,7 @@ int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	size_t sz = (size_t)width * height;	//总像素数
 	int tilesX = (width + TILE_SIZE - 1) / TILE_SIZE;
 	int tilesY = (height + TILE_SIZE - 1) / TILE_SIZE;
-	g_tilesX = tilesX; 
+	g_tilesX = tilesX;
 	g_tilesY = tilesY;
 
 	// 释放可能已存在的旧缓冲区
@@ -297,8 +389,30 @@ int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	cudaError_t err3 = cudaMalloc(&g_dTriCache, 500000 * sizeof(TriCached)); // 预处理数据缓冲，最大50万三角形
 	cudaError_t err4 = cudaMalloc(&g_dTiles, tilesX * tilesY * sizeof(TileData));//分块内存
 	// 检查内存分配是否成功
-	if (err1 != cudaSuccess || err2 != cudaSuccess ||err3 != cudaSuccess|| err4 != cudaSuccess) return -1;
+	if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess || err4 != cudaSuccess) return -1;
 	return 0;  // 成功
+}
+
+// 上传 BVH 节点数据到 GPU 显存
+extern "C" CUDA_API
+void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
+	if (g_dBVH) {
+		cudaFree(g_dBVH);
+		g_dBVH = nullptr;
+	}
+	g_numBVHNodes = numNodes;
+
+	if (numNodes > 0 && nodes) {
+		size_t bytes = (size_t)numNodes * sizeof(BVHNode);
+		cudaError_t err = cudaMalloc(&g_dBVH, bytes);
+		if (err == cudaSuccess) {
+			cudaMemcpy(g_dBVH, nodes, bytes, cudaMemcpyHostToDevice);
+		}
+		else {
+			g_dBVH = nullptr;
+			g_numBVHNodes = 0;
+		}
+	}
 }
 
 // 上传三角形数据到GPU
@@ -347,14 +461,21 @@ void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	int tilesX = (params.width + TILE_SIZE - 1) / TILE_SIZE;
 	int tilesY = (params.height + TILE_SIZE - 1) / TILE_SIZE;
 	dim3 tileGrid((tilesX + 15) / 16, (tilesY + 15) / 16);
-	buildTileKernel << <tileGrid, dim3(16, 16) >> > (g_dTiles, g_dTriCache, params.numTris,
-		tilesX, tilesY, params.width, params.height);
+	buildTileKernel << <tileGrid, dim3(16, 16) >> > (
+		g_dTiles, 
+		g_dTriCache, 
+		params.numTris,
+		tilesX, tilesY, 
+		params.width, params.height, 
+		params.mvp,         // 三改：传入 MVP 矩阵供 BVH 投影使用
+		g_dBVH,				// 三改:传入设备端 BVH 指针
+		g_numBVHNodes);		// 三改:传入节点数量
 	cudaDeviceSynchronize();
 	//第四步：光栅化三角形
 	rasterizeKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf,
 		g_dTriCache,
 		g_dTris ? g_dTris : nullptr,  // 如果没有三角形，传nullptr
-		g_dTiles, 
+		g_dTiles,
 		tilesX,
 		params);
 	cudaDeviceSynchronize();
@@ -389,9 +510,16 @@ void cudaShutdown(void)
 		g_dTriCache = nullptr;
 	}
 	// 释放分块
-	if (g_dTiles) { 
+	if (g_dTiles) {
 		cudaFree(g_dTiles);
 		g_dTiles = nullptr;
 	}
+	// 释放 BVH 节点
+	if (g_dBVH) {
+		cudaFree(g_dBVH);
+		g_dBVH = nullptr;
+	}
+	g_numBVHNodes = 0;
+
 	g_numTris = 0;  // 重置三角形计数
 }
