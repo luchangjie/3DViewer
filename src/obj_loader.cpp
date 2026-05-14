@@ -123,14 +123,14 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
         // 五：平移+缩放
         for (auto& tri : tris)
             for (int k = 0; k < 3; k++) {
-                tri.v[k].x = (tri.v[k].x - center.x) * scale;
-                tri.v[k].y = (tri.v[k].y - center.y) * scale;
-                tri.v[k].z = (tri.v[k].z - center.z) * scale;
+                tri.v[k].x = (tri.v[k].x - center.x) * scale;  
+                tri.v[k].y = (tri.v[k].y - center.y) * scale;  
+                tri.v[k].z = (tri.v[k].z - center.z) * scale;  
             }
         // 六：重新计算所有面法线保证变换后安全！！！
         for (auto& tri : tris) {
-            Vec3 ab = tri.v[1] - tri.v[0];
-            Vec3 ac = tri.v[2] - tri.v[0];
+            Vec3 ab = tri.v[1] - tri.v[0];   
+            Vec3 ac = tri.v[2] - tri.v[0];   
             tri.normal = ab.cross(ac).norm();
         }
     }
