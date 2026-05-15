@@ -474,7 +474,7 @@ void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	//第四步：光栅化三角形
 	rasterizeKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf,
 		g_dTriCache,
-		g_dTris ? g_dTris : nullptr,  // 如果没有三角形，传nullptr
+		g_dTris,  
 		g_dTiles,
 		tilesX,
 		params);

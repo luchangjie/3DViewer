@@ -11,6 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\src\Direct2DDisplay.h" />
     <ClInclude Include="..\src\render.h" />
   </ItemGroup>
   <ItemGroup>

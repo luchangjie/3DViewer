@@ -19,6 +19,7 @@
 #include<cfloat>
 #include<string>
 #include"render.h"
+#include "Direct2DDisplay.h"
 #include <algorithm>            // 三改：用于 std::nth_element 构建 BVH
 #include <vector>               // 三改：BVH 节点容器
 
@@ -35,14 +36,14 @@ typedef void (*cudaUploadBVH_t)(const BVHNode*, int);           //三改
 static cudaInit_t				p_cudaInit = nullptr;
 static cudaUploadTriangles_t	p_cudaUploadTriangles = nullptr;
 static cudaRender_t				p_cudaRender = nullptr;
-static cudaShutdown_t			 p_cudaShutdown = nullptr;
-static cudaUploadBVH_t      p_cudaUploadBVH = nullptr;  // 三改：上传 BVH 到显存的函数
+static cudaShutdown_t			p_cudaShutdown = nullptr;
+static cudaUploadBVH_t          p_cudaUploadBVH = nullptr;      // 三改：上传 BVH 到显存的函数
 
 //全局常量
 static const int	WIN_W = 900;	//窗口宽
 static const int	WIN_H = 700;	//窗口高
 static const float	FOV_Y = 60.f * 3.14159265f / 180.f;	//垂直视场角（弧度制）
-static const float	Z_NEAR = 0.1f;	//近裁剪面
+static const float	Z_NEAR = 0.01f;	//近裁剪面
 static const float  Z_FAR = 100.f;	// 远裁剪面距离
 static std::vector<BVHNode> g_hBVH;                   // 三改：CPU 端 BVH 节点数组
 static int                  g_numBVHNodes = 0;        // 三改：BVH 节点数量
@@ -105,10 +106,7 @@ static bool      g_voxelMode = false;           //是否体素模式
 static std::string g_currentModelPath;          //记住当前模型路径
 // Windows资源句柄
 static HWND         g_hwnd = nullptr;       // 主窗口句柄 Handle to a Window
-static HDC          g_hdc = nullptr;        // 窗口画布句柄 Handle to a Device Context
-static HBITMAP      g_hbmp = nullptr;       // DIB位图句柄 Handle to a BITMAP
-static HDC          g_memDC = nullptr;      // 内存画布句柄（双缓冲）
-static void* g_dibBits = nullptr;    // DIB位图像素数据指针
+static Direct2DDisplay g_display;               // Direct2D 显示器
 //-------------------------------------------------------------------
 //打开文件 对话框
 static std::string openFileDialog(HWND owner) {
@@ -265,30 +263,10 @@ static void loadModel(const std::string& path) {
     g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.5f;
 }
 //-------------------------------------------------------------------
-//创建DIB段（GPU渲染结果搬到CPU存的地）
-static void createDIB(HWND hwnd, int w, int h) {
-    // 清理旧的GDI资源
-    if (g_memDC)  DeleteDC(g_memDC);                    // 删除内存的画布
-    if (g_hbmp)   DeleteObject(g_hbmp);                 // 删除位图对象
-    if (g_hdc)    ReleaseDC(hwnd, g_hdc);               // 释放窗口的画布
-
-    g_hdc = GetDC(hwnd);                                // 凭句柄hwnd获取窗口画布 Device Context
-    g_memDC = CreateCompatibleDC(g_hdc);                // 创建内存画布（双缓冲）
-
-    //配置位图数据
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);    // 结构体大小
-    bmi.bmiHeader.biWidth = w;                          // 位图宽度
-    bmi.bmiHeader.biHeight = -h;                        // 负值表示从上到下存储（原点在左上角）
-    bmi.bmiHeader.biPlanes = 1;                         // 颜色平面数（历史遗留字段，固定为1）
-    bmi.bmiHeader.biBitCount = 32;                      // 每像素32位（BGRA）
-    bmi.bmiHeader.biCompression = BI_RGB;               // 无压缩
-
-    g_hbmp = CreateDIBSection(g_hdc, &bmi, DIB_RGB_COLORS, &g_dibBits, nullptr, 0);//创建位图对象，g_dibBits有了指向
-    SelectObject(g_memDC, g_hbmp);                      //位图选入内存画布
-    g_hFramebuf = (unsigned int*)g_dibBits;             //像素数据指针转为无符号整型指针
+static void initDisplay(HWND hwnd, int w, int h) {
+    g_display.init(hwnd, w, h);
+    g_hFramebuf = new unsigned int[w * h];
 }
-
 //-------------------------------------------------------------------
 //集成好的逐帧渲染
 static void renderFrame() {
@@ -321,7 +299,7 @@ static void renderFrame() {
     // 调用CUDA渲染（GPU计算 + 拷贝回主机内存）
     p_cudaRender(rp, g_hFramebuf);
     // 将渲染结果从内存DC拷贝到窗口DC（双缓冲显示）
-    BitBlt(g_hdc, 0, 0, WIN_W, WIN_H, g_memDC, 0, 0, SRCCOPY);
+    g_display.draw(g_hFramebuf);
     // FPS 显示
     static DWORD lastTime = 0;
     static int frameCount = 0;
@@ -453,6 +431,8 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     LPSTR lpCmdLine,                //命令行参数，暂时没用
     int nShow)                      //窗口初始显示方式（最大化，最小化，正常）
 {
+    //COM初始化
+    CoInitialize(nullptr);  
     // 分配控制台窗口（用于显示printf的调试信息）
     AllocConsole();
     freopen("CONOUT$", "w", stdout);   // 重定向标准输出到控制台
@@ -492,8 +472,7 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     UpdateWindow(g_hwnd);
 
     //---------------------------------------------------------------
-    //创建DIB缓冲区（帧缓冲）
-    createDIB(g_hwnd, WIN_W, WIN_H);
+    initDisplay(g_hwnd, WIN_W, WIN_H);
 
     //默认加载cube.obj模型
     {
@@ -515,10 +494,9 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     // -- 释放资源 --------------------------------------------------------------
     if (p_cudaShutdown) p_cudaShutdown();          // 关闭CUDA释放显存
     delete[] g_hTris;                               // 释放三角形数据
-    if (g_memDC)  DeleteDC(g_memDC);               // 删除内存设备上下文
-    if (g_hbmp)   DeleteObject(g_hbmp);            // 删除位图对象
-    if (g_hdc && g_hwnd) ReleaseDC(g_hwnd, g_hdc); // 释放窗口设备上下文
+    delete[] g_hFramebuf;
     if (g_hKernel) FreeLibrary(g_hKernel);          // 卸载DLL
 
+    CoUninitialize();
     return (int)msg.wParam;                        // 返回退出代码
 }
