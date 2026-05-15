@@ -35,7 +35,7 @@ static const int PALETTE_SIZE = (int)(sizeof(PALETTE) / sizeof(PALETTE[0]));
 int loadOBJ(const char* path, GPUTriangle*& triangles) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[OBJ] Cannot open file: " << path << std::endl;
+        std::cerr << "[OBJ] 无法打开文件: " << path << std::endl;
         triangles = nullptr;
         return 0;
     }
@@ -70,8 +70,8 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
             }
             // 如果顶点数超过64个，发出警告（实际会被截断,而且一般不会出现）
             if (cnt >= 64) {
-                std::cerr << "[OBJ] Warning: face at line " << lineNum
-                    << " has too many vertices, truncated" << std::endl;
+                std::cerr << "[OBJ] 警告: obj文件第 " << lineNum
+                    << " 行顶点过多" << std::endl;
             }
             // 扇分割：将多边形f 0 1 2 3分解为三角形(0,1,2)和(0,2,3)
             // 以第一个顶点为公共顶点，依次连接相邻顶点
@@ -138,7 +138,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
     // 第三步：分配输出数组，返回最终三角形数量
     int n = (int)tris.size();
     if (n == 0) {
-        fprintf(stderr, "[OBJ] No valid triangles found in: %s\n", path);
+        fprintf(stderr, "[OBJ] 未发现三角形于: %s\n", path);
         triangles = nullptr;
         return 0;
     }
@@ -148,14 +148,14 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
     }
     catch (...) {
         // 内存分配失败：输出错误信息
-        fprintf(stderr, "[OBJ] Memory allocation failed for %d triangles\n", n);
+        fprintf(stderr, "[OBJ] 内存分配失败，共 %d 个三角形\n", n);
         triangles = nullptr;
         return 0;
     }
     // 将临时vector中的三角形数据复制到输出数组
     for (int i = 0; i < n; i++) triangles[i] = tris[i];
     // 输出加载成功的统计信息
-    fprintf(stdout, "[OBJ] Loaded %d vertices, %d triangles: %s\n",
+    fprintf(stdout, "[OBJ] 加载 %d 顶点, %d 三角形: %s\n",
         (int)verts.size(), n, path);
 
     return n;

@@ -19,14 +19,14 @@
 
 //二维坐标
 struct Vec2 {
-	float x, y;
-	__host__ __device__ Vec2(float x = 0, float y = 0) :x(x), y(y) {}//构造函数
+    float x, y;
+    __host__ __device__ Vec2(float x = 0, float y = 0) :x(x), y(y) {}//构造函数
 };
 
 //三维坐标（不是矩阵）
 struct Vec3 {
-	float x, y ,z;
-	__host__ __device__ Vec3(float x=0,float y=0,float z=0):x(x),y(y),z(z){}//构造函数
+    float x, y, z;
+    __host__ __device__ Vec3(float x = 0, float y = 0, float z = 0) :x(x), y(y), z(z) {}//构造函数
     // 向量加法
     __host__ __device__ Vec3 operator+(const Vec3& b) const { return { x + b.x, y + b.y, z + b.z }; }
     // 向量减法
@@ -64,10 +64,10 @@ struct Mat4 {
     //矩阵乘法
     __host__ __device__ Mat4 operator*(const Mat4& b) const {
         Mat4 r;//对于结果矩阵r
-        for (int col = 0; col < 4; col++)           
-            for (int row = 0; row < 4; row++) { 
+        for (int col = 0; col < 4; col++)
+            for (int row = 0; row < 4; row++) {
                 float s = 0;
-                for (int k = 0; k < 4; k++)    
+                for (int k = 0; k < 4; k++)
                     s += m[k][row] * b.m[col][k];//左k行*右列k挨个求和
                 r.m[col][row] = s;
             }
@@ -168,17 +168,34 @@ struct RenderParams {
 
 //一改：预计算三角形屏幕包围盒 + NDC 坐标
 struct TriCached {
-    float nx[3], ny[3], nz[3];  // NDC 坐标
-    int minX, maxX, minY, maxY; // 屏幕像素包围盒
+    float nx[3], ny[3], nz[3];      // NDC 坐标
+    short minX, maxX, minY, maxY;   // 屏幕像素包围盒
+    float baseR, baseG, baseB;      // 三改：预计算漫反射系数和环境光后的颜色
+    bool flipped;
+    float area;
+    Vec3 normal;
 };
 
 //二改：屏幕分块：每个块存覆盖它的三角形索引列表
 #define TILE_SIZE 16
-#define MAX_TRIS_PER_TILE 20480  // 每块最多 n 个三角形
+#define MAX_TRIS_PER_TILE 20480     // 每块最多 n 个三角形
 
 struct TileData {
-    int triIndices[MAX_TRIS_PER_TILE];  // 三角形索引
-    int triCount;                        // 实际数量
+    int triIdx[MAX_TRIS_PER_TILE];  // 三角形索引
+    int triCount;                   // 实际数量
+};
+
+//===================================================================
+//三改： BVH 节点结构（供 CPU 构建、GPU 遍历）
+// 说明：按模型空间 AABB 组织，叶子节点包含一段连续的三角形索引
+//===================================================================
+struct BVHNode {
+    float minX, minY, minZ;  // 模型空间 AABB 最小角
+    float maxX, maxY, maxZ;  // 模型空间 AABB 最大角
+    int left;                // 左子节点在数组中的索引，-1 表示当前为叶子节点
+    int right;               // 右子节点索引，-1 表示叶子
+    int triStart;            // 叶子节点：在重排后三角形数组中的起始索引
+    int triCount;            // 叶子节点：包含的三角形数量（内部节点填 0）
 };
 
 //DLL引入API（实现在render.cu）
@@ -195,6 +212,11 @@ extern "C" {        // 使用C语言链接规范（防止C++名称修饰，便于动态加载）
     //       nameBufSize - 名称缓冲区大小
     // 返回值：成功返回0，失败返回-1
     CUDA_API int cudaInit(int width, int height, char* outName, int nameBufSize);
+
+    // 三改：上传 BVH 节点数据到 GPU 显存（应在 cudaUploadTriangles 之后调用）
+    // nodes    - 主机端 BVH 节点数组指针（由 buildBVH 生成）
+    // numNodes - 节点总数
+    CUDA_API void cudaUploadBVH(const BVHNode* nodes, int numNodes);
 
     // 将三角形数据上传到GPU显存（可多次调用以重新上传）
     // 参数：tris - 主机端三角形数组指针
