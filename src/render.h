@@ -45,6 +45,8 @@ struct Vec3 {
     }
     //模长
     __host__ __device__ float len()   const { return sqrtf(x * x + y * y + z * z); }
+    //模长平方
+    __host__ __device__ float lenSq()   const { return (x * x + y * y + z * z); }
     // 归一化标准化，零向量返回(0,1,0)，使后续三角形法线方向默认朝上，不影响视觉
     __host__ __device__ Vec3  norm()  const {
         float l = len();
@@ -167,15 +169,24 @@ struct RenderParams {
 };
 
 //一改：预计算三角形屏幕包围盒 + NDC 坐标
+// 所有数据都在GPU预处理阶段计算完成，光栅化阶段直接使用
 struct TriCached {
-    float nx[3], ny[3], nz[3];      // NDC 坐标
-    short minX, maxX, minY, maxY;   // 屏幕像素包围盒
-    float baseR, baseG, baseB;      // 三改：预计算漫反射系数和环境光后的颜色
-    bool flipped;
-    float area;
-    Vec3 normal;
+    float nx[3], ny[3], nz[3];      // NDC 坐标（不需要裁剪的三角形直接使用）
+    short minX, maxX, minY, maxY;   // 屏幕像素包围盒（精确计算，不再是全屏幕）
+    float baseR, baseG, baseB;      // 预计算漫反射+环境光后的基础颜色（高光除外）
+    bool flipped;                   // 原始三角形是否为背面（用于光照计算）
+    float area;                     // 原始三角形面积（不需要裁剪时使用）
+    Vec3 normal;                    // 预计算的面法线（已处理背面翻转）
+    int clippedTriStart;            // 裁剪后三角形在全局数组中的起始索引
+    int clippedTriCount;            // 裁剪后三角形数量（0=完全剔除，1=1个，2=2个）
 };
-
+// 新增：裁剪后的三角形结构体
+// 所有与裁剪相关的计算都在预处理阶段完成，光栅化阶段直接使用
+struct ClippedTri {
+    float nx[3], ny[3], nz[3];      // 裁剪后的NDC坐标（已完成透视除法）
+    float area;                     // 裁剪后的三角形面积（绝对值）
+    bool flipped;                   // 裁剪后的三角形是否为背面
+};
 //二改：屏幕分块：每个块存覆盖它的三角形索引列表
 #define TILE_SIZE 16
 #define MAX_TRIS_PER_TILE 20480     // 每块最多 n 个三角形
@@ -227,6 +238,14 @@ extern "C" {        // 使用C语言链接规范（防止C++名称修饰，便于动态加载）
     // 参数：params - 渲染参数（MVP矩阵、光源等）
     //       g_hFramebuf - 输出缓冲区指针（BGRA格式，至少 width*height*4 字节）
     CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf);
+
+    // 导出体素化后的三角形为OBJ文件
+    // 参数：
+    //   path - 输出文件路径
+    //   tris - 体素化后的三角形数组
+    //   numTris - 三角形数量
+    // 返回值：成功返回true，失败返回false
+    extern "C" bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris);
 
     // 释放所有GPU资源：在卸载DLL之前调用
     CUDA_API void cudaShutdown(void);

@@ -18,6 +18,7 @@
 #include<cmath>
 #include<cfloat>
 #include<string>
+#include<fstream>
 #include"render.h"
 #include "Direct2DDisplay.h"
 #include <algorithm>            // 三改：用于 std::nth_element 构建 BVH
@@ -96,7 +97,7 @@ static GPUTriangle* g_hTris = nullptr;       // 三角形数组（主机端）
 static int              g_numTris = 0;          // 三角形数量
 static float     g_rotX = 0.3f;                 // 摄像机绕X轴旋转角度（弧度）
 static float     g_rotY = 0.5f;                 // 摄相机绕Y轴旋转角度（弧度）
-static float     g_zoom = 4.5f;                 // 摄像机距离（缩放级别）
+static float     g_zoom = 4.0f;                 // 摄像机距离（缩放级别）
 static bool      g_dragging = false;            // 鼠标是否正在拖拽（左键按住）
 static int       g_lastMX = 0, g_lastMY = 0;    // 上一帧的鼠标位置（用于计算增量）
 static bool      g_panning = false;             // 右键拖拽（平移）
@@ -260,7 +261,7 @@ static void loadModel(const std::string& path) {
     if (p_cudaUploadBVH && g_numBVHNodes > 0)
         p_cudaUploadBVH(g_hBVH.data(), g_numBVHNodes);
     // 重置摄像机到默认视角
-    g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.5f;
+    g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.0f;
 }
 //-------------------------------------------------------------------
 static void initDisplay(HWND hwnd, int w, int h) {
@@ -315,7 +316,7 @@ static void renderFrame() {
     char title[128];
     const char* modeStr = g_voxelMode ? "Voxel" : (g_wireframe ? "Wire" : "Solid");
     snprintf(title, sizeof(title),
-        "3DViewer  |  Tris: %d  |  FPS: %.1f  |  Mode: %s  |  [W]Wire [V]Voxel [O]Open [R]Reset",
+        "3DViewer | Tris: %d | FPS: %.1f | Mode: %s | [W]Wire [V]Voxel [G]Get voxel obj [O]Open [R]Reset",
         g_numTris, fps, modeStr);
     SetWindowTextA(g_hwnd, title);
 }
@@ -342,14 +343,35 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wp == 'R') {           // R键：重置摄像机
-            g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.5f;
+            g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.0f;
             g_panX = 0.f; g_panY = 0.f;
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wp == 'O') {           // O键：打开OBJ文件
+            g_voxelMode = false;
             std::string path = openFileDialog(hwnd);
             if (!path.empty()) loadModel(path);
             InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        else if (wp == 'G' && g_voxelMode && g_numTris > 0) {   //G键：导出体素化obj文件
+            OPENFILENAMEA ofn = {};
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hwnd;
+            ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";
+            char buf[MAX_PATH] = "voxelized.obj";
+            ofn.lpstrFile = buf;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_OVERWRITEPROMPT;
+
+            if (GetSaveFileNameA(&ofn)) {
+                // 调用导出函数
+                if (exportVoxelObj(buf, g_hTris, g_numTris)) {
+                    MessageBoxA(hwnd, "体素化OBJ导出成功！", "导出完成", MB_OK | MB_ICONINFORMATION);
+                }
+                else {
+                    MessageBoxA(hwnd, "导出失败！无法写入文件。", "错误", MB_OK | MB_ICONERROR);
+                }
+            }
         }
         return 0;
     }
@@ -403,10 +425,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_MOUSEWHEEL: {             // 鼠标滚轮
         int delta = GET_WHEEL_DELTA_WPARAM(wp);  // 获取滚轮增量（正值=向前滚）
-        g_zoom -= delta * 0.005f;     // 调整缩放距离，因为模型居中且摄像机看向中，故等价缩放了
+        float sensitivity;
+        if (g_zoom < 2.0f) {
+            // 极近距离
+            sensitivity = 0.001f;
+        }
+        else if (g_zoom < 6.0f) {
+            // 近距离
+            sensitivity = 0.002f;
+        }
+        else {
+            // 正常距离
+            sensitivity = 0.005f;
+        }
+        g_zoom -= delta * sensitivity;
         // 限制缩放范围
-        if (g_zoom < 0.5f) g_zoom = 0.5f;  // 最近距离
-        if (g_zoom > 20.f) g_zoom = 20.f;  // 最远距离
+        if (g_zoom < 0.2f) g_zoom = 0.2f;  // 最近距离
+        if (g_zoom > 16.f) g_zoom = 16.f;  // 最远距离
         InvalidateRect(hwnd, nullptr, FALSE);  //请求重绘
         return 0;
     }
@@ -433,6 +468,7 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
 {
     //COM初始化
     CoInitialize(nullptr);  
+
     // 分配控制台窗口（用于显示printf的调试信息）
     AllocConsole();
     freopen("CONOUT$", "w", stdout);   // 重定向标准输出到控制台
@@ -461,9 +497,9 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     // 创建窗口
     g_hwnd = CreateWindowExA(
         0, "3DViewer",                          // 窗口类名
-        "3D Viewer",                   // 窗口标题
-        WS_OVERLAPPEDWINDOW,                      // 窗口样式（可调整大小）
-        CW_USEDEFAULT, CW_USEDEFAULT, ww, wh,     // 位置和大小
+        "3D Viewer",                            // 窗口标题
+        WS_OVERLAPPEDWINDOW,                    // 窗口样式（可调整大小）
+        CW_USEDEFAULT, CW_USEDEFAULT, ww, wh,   // 位置和大小
         nullptr, nullptr, hInst, nullptr);
     if (!g_hwnd) { fprintf(stderr, "CreateWindow failed\n"); return 1; }
 
@@ -471,22 +507,54 @@ int WINAPI WinMain(HINSTANCE hInst, //程序身份标记
     ShowWindow(g_hwnd, nShow);
     UpdateWindow(g_hwnd);
 
-    //---------------------------------------------------------------
+    //渲染像素
     initDisplay(g_hwnd, WIN_W, WIN_H);
 
-    //默认加载cube.obj模型
+    // 默认加载内嵌的单点模型
     {
-        char exeDir[MAX_PATH] = {};                // 可执行文件路径缓冲区
-        GetModuleFileNameA(nullptr, exeDir, MAX_PATH);  // 获取exe完整路径
-        char* lastSlash = strrchr(exeDir, '\\');   // 查找最后一个反斜杠
-        if (lastSlash) *(lastSlash + 1) = '\0';      // 截断到目录路径
-        std::string defaultModel = std::string(exeDir) + "models\\cube.obj";  // 拼接默认模型路径
-        loadModel(defaultModel);                   // 加载默认模型
+        // 定义内嵌的OBJ数据字符串（C风格字符串，存储在只读数据段）
+        static const char* embeddedPoint =
+            "v  -1.0  -1.0  -1.0\n"
+            "v  -1.0   1.0  -1.0\n"
+            "v   1.0   1.0  -1.0\n"
+            "v   1.0  -1.0  -1.0\n"
+            "v  -1.0  -1.0   1.0\n"
+            "v  -1.0   1.0   1.0\n"
+            "v   1.0   1.0   1.0\n"
+            "v   1.0  -1.0   1.0\n"
+            "f 1 2 3\n"
+            "f 1 3 4\n"
+            "f 5 6 2\n"
+            "f 5 2 1\n"
+            "f 6 7 3\n"
+            "f 6 3 2\n"
+            "f 7 8 4\n"
+            "f 7 4 3\n"
+            "f 8 5 1\n"
+            "f 8 1 4\n"
+            "f 5 8 7\n"
+            "f 5 7 6\n";
+        // 满足OBJ格式要求，让解析器能生成1个三角形
+
+        char tempPath[MAX_PATH];     // 系统临时目录路径缓冲区（通常是C:\Users\...\AppData\Local\Temp）
+        char tempFile[MAX_PATH];     // 临时文件完整路径缓冲区
+
+        GetTempPathA(sizeof(tempPath), tempPath);    // 获取系统临时目录路径，存入tempPath
+        GetTempFileNameA(tempPath, "3dv", 0, tempFile); // 在临时目录生成唯一文件名
+        // 前缀"3dv"，后缀.tmp，结果如：
+        // C:\...\Temp\3dv1234.tmp
+        std::ofstream ofs(tempFile);
+        if (ofs) {
+            ofs << embeddedPoint;
+            ofs.close();
+            loadModel(tempFile);
+        }
+        DeleteFileA(tempFile);
     }
 
     //消息循环
     MSG msg = {};
-    while (GetMessageA(&msg, nullptr, 0, 0)) {     // 获取消息（阻塞直到有消息）
+    while (GetMessageA(&msg, nullptr, 0, 0)) {      // 获取消息（阻塞直到有消息）
         TranslateMessage(&msg);                     // 翻译虚拟键消息
         DispatchMessageA(&msg);                     // 分发消息到窗口过程
     }
