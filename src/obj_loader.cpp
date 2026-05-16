@@ -5,8 +5,6 @@
 #include <fstream>
 #include <sstream>      // std::istringstream
 #include <iostream>
-#include <cstdlib>
-#include <cstring>
 #include <vector>
 #include <algorithm>
 

@@ -9,9 +9,6 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <mutex>
-#include <unordered_map>
 
 // 小立方体的8个顶点的3个坐标（中心在原点）
 static const float cubeVerts[8][3] = {
