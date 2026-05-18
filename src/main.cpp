@@ -274,27 +274,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wp == 'O') {           //O键：打开OBJ文件
-            g_voxelMode = false;
             std::string path = openFileDialog(hwnd);
             if (!path.empty()) { 
+                g_voxelMode = false;
                 loadModel(path); 
                 g_isEmbeddedModel = false;
             }
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wp == 'G' && g_voxelMode && g_numTris > 0) {   //G键：导出体素化obj文件
-            OPENFILENAMEA ofn = {};
-            ofn.lStructSize = sizeof(ofn);
-            ofn.hwndOwner = hwnd;
-            ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";
-            char buf[MAX_PATH] = "voxelized.obj";
-            ofn.lpstrFile = buf;
-            ofn.nMaxFile = MAX_PATH;
-            ofn.Flags = OFN_OVERWRITEPROMPT;
+            OPENFILENAMEA ofn = {};                     // 保存文件对话框结构体
+            ofn.lStructSize = sizeof(ofn);              // Windows 要求的版本信息
+            ofn.hwndOwner = hwnd;                       // 父窗口
+            ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";// 文件类型过滤器
+            char buf[MAX_PATH] = "voxelized";           // 默认文件名（无后缀）
+            ofn.lpstrFile = buf;                        // 用户输入的路径存到这里
+            ofn.nMaxFile = MAX_PATH;                    // 缓冲区大小
+            ofn.Flags = OFN_OVERWRITEPROMPT;            // 覆盖已有文件时弹出确认提示
 
-            if (GetSaveFileNameA(&ofn)) {
-                //调用导出函数
-                if (exportVoxelObj(buf, g_hTris, g_numTris)) {
+            if (GetSaveFileNameA(&ofn)) {               // 弹出保存对话框，用户点"保存"
+                std::string path(buf);
+                if (path.size() < 4 || path.substr(path.size() - 4) != ".obj") {
+                    path += ".obj";                     // 如果用户没写 .obj，自动补上（防止改名后不是obj文件）
+                }
+                if (exportVoxelObj(path.c_str(), g_hTris, g_numTris)) {// 调用导出函数写 OBJ 文件
                     MessageBoxA(hwnd, "体素化OBJ导出成功！", "导出完成", MB_OK | MB_ICONINFORMATION);
                 }
                 else {
