@@ -254,7 +254,7 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
     file.close();
 
     if (tris.empty()) {
-        std::cerr << "[VOXEL] No triangles in: " << path << std::endl;
+        std::cerr << "[VOXEL]未发现三角形在: " << path << std::endl;
         triangles = nullptr;
         return 0;
     }
@@ -274,7 +274,9 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
     }
 
     // 第三步：体素参数
-    const int resolution = 256; //单轴体素数
+    extern int g_voxelResolution;               // 声明外部全局变量（在main.cpp）
+    const int resolution = g_voxelResolution;
+
     float voxelSize = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z }) / resolution; //选最长的边计算体素边长
 
     // 第四步：构建空间哈希网格
@@ -407,10 +409,26 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
                             Vec3 ab = vTri.v[1] - vTri.v[0];
                             Vec3 ac = vTri.v[2] - vTri.v[0];
                             vTri.normal = ab.cross(ac).norm();
-                            //全灰色（可以根据位置添加渐变效果）
-                            vTri.color[0] = 180;
-                            vTri.color[1] = 180;
-                            vTri.color[2] = 180;
+
+                            // 计算主轴的权重（绝对值最大的那个轴）
+                            float weightX = fabsf(vTri.normal.x);
+                            float weightY = fabsf(vTri.normal.y);
+                            float weightZ = fabsf(vTri.normal.z);
+                            // 根据主要朝向分配不同灰度值
+                            float gray;
+                            if (weightX >= weightY && weightX >= weightZ) {
+                                gray = 110.0f;           // X轴面
+                            }
+                            else if (weightY >= weightX && weightY >= weightZ) {
+                                gray = 140.0f;           // Y轴面
+                            }
+                            else {
+                                gray = 170.0f;            // Z轴面
+                            }
+
+                            vTri.color[0] = (unsigned char)gray;
+                            vTri.color[1] = (unsigned char)gray;
+                            vTri.color[2] = (unsigned char)gray;
                             voxelTris.push_back(vTri);
                         }
                     }
@@ -466,6 +484,7 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
         << "，来自于 " << path << std::endl;
     return n;
 }
+
 // 导出体素化后的三角形为OBJ文件
 bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris) {
     if (!tris || numTris <= 0) return false;
