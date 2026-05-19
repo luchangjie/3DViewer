@@ -27,7 +27,7 @@ static int g_tilesX = 0, g_tilesY = 0;		//X和Y方向的分块数量
 static BVHNode* g_dBVH = nullptr;			//设备端BVH加速结构节点数组
 static int g_numBVHNodes = 0;				//BVH节点总数
 static ClippedTri* g_dClippedTris = nullptr;//裁剪后的三角形数组（每个原三角形最多2个）
-static int g_maxClippedTris = 50000000;     //最大支持的裁剪后三角形数量（与原三角形相同）
+static int g_maxClippedTris = 100000000;     //最大支持的裁剪后三角形数量（与原三角形相同）
 
 //-------------------------- 核心工具函数 --------------------------
 /**

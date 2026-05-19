@@ -44,6 +44,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
     int faceIdx = 0;                //面序号
     int lineNum = 0;                //当前行号
 
+    std::cout << "[OBJ]正在读取obj文件...\n";
     //第一步：得到三角形列表
     while (std::getline(file, line)) {
         lineNum++;

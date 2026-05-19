@@ -323,9 +323,10 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
 
     // 第五步：OpenMP多线程遍历体素（使用位图代替unordered_set）
     VoxelBitmap voxelBitmap(resolution, resolution, resolution);
+    size_t totalVoxels = (size_t)resolution * resolution * resolution;
 
     std::cout << "[VOXEL] 开始体素化，分辨率: " << resolution << "x" << resolution << "x" << resolution
-        << "，总共有 " << resolution * resolution * resolution << " 个体素" << std::endl;
+        << "，总共有 " << totalVoxels << " 个体素" << std::endl;
 
     // OpenMP并行处理X轴（最外层循环）
     // 自动使用所有CPU核心，性能与C++17并行算法相当
@@ -365,7 +366,7 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
         }
     }
 
-    int numVoxels = voxelBitmap.count();
+    size_t numVoxels = voxelBitmap.count();
     if (numVoxels == 0) {
         std::cerr << "[VOXEL] 未生成任何表面体素" << std::endl;
         triangles = nullptr;
