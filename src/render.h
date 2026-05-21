@@ -189,7 +189,7 @@ struct ClippedTri {
 
 //二改：屏幕分块：每个块存覆盖它的三角形索引列表
 #define TILE_SIZE 16
-#define MAX_TRIS_PER_TILE 81920     //每块最多 n 个三角形
+#define MAX_TRIS_PER_TILE 40960     //每块最多 n 个三角形
 
 struct TileData {
     int triIdx[MAX_TRIS_PER_TILE];  //三角形索引
