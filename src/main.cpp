@@ -24,21 +24,9 @@
 #include <vector>               
 
 int loadOBJ(const char* path, GPUTriangle*& triangles);	        //在obj_loader.cpp
+bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris);
 int loadVoxelObj(const char* path, GPUTriangle*& triangles);    //在voxel_loader.cpp
 void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes);  //在bvh_builder.cpp
-
-typedef int (*cudaInit_t)(int, int, char*, int);
-typedef void (*cudaUploadTriangles_t)(const GPUTriangle*, int);
-typedef void (*cudaRender_t)(const RenderParams&, unsigned int*);
-typedef void (*cudaShutdown_t)(void);
-typedef void (*cudaUploadBVH_t)(const BVHNode*, int);           //三改
-
-//全局指针变量（通过GetProcAddress获取DLL中函数地址），分别指向dll的4个函数
-static cudaInit_t				p_cudaInit = nullptr;
-static cudaUploadTriangles_t	p_cudaUploadTriangles = nullptr;
-static cudaRender_t				p_cudaRender = nullptr;
-static cudaShutdown_t			p_cudaShutdown = nullptr;
-static cudaUploadBVH_t          p_cudaUploadBVH = nullptr;      //三改：上传 BVH 到显存的函数
 
 //全局常量
 static const float	FOV_Y = 60.f * 3.14159265f / 180.f;	//垂直视场角（弧度制）
@@ -69,6 +57,20 @@ static bool g_isEmbeddedModel = false;          //是否是内嵌临时模型
 //Windows资源句柄
 static HWND         g_hwnd = nullptr;           //主窗口句柄 Handle to a Window
 static Direct2DDisplay g_display;               //Direct2D 显示器
+
+
+typedef int (*cudaInit_t)(int, int, char*, int);
+typedef void (*cudaUploadTriangles_t)(const GPUTriangle*, int);
+typedef void (*cudaRender_t)(const RenderParams&, unsigned int*);
+typedef void (*cudaShutdown_t)(void);
+typedef void (*cudaUploadBVH_t)(const BVHNode*, int);           //三改
+
+//全局指针变量（通过GetProcAddress获取DLL中函数地址），分别指向dll的4个函数
+static cudaInit_t				p_cudaInit = nullptr;
+static cudaUploadTriangles_t	p_cudaUploadTriangles = nullptr;
+static cudaRender_t				p_cudaRender = nullptr;
+static cudaShutdown_t			p_cudaShutdown = nullptr;
+static cudaUploadBVH_t          p_cudaUploadBVH = nullptr;      //三改：上传 BVH 到显存的函数
 
 //-------------------------------------------------------------------
 //加载DLL并获取所有CUDA函数指针，初始化
@@ -110,6 +112,27 @@ static bool initRenderer() {
 }
 
 //-------------------------------------------------------------------
+//显示方法
+static void initDisplay(HWND hwnd, int w, int h) {
+    g_display.init(hwnd, w, h);
+    g_hFramebuf = new unsigned int[w * h];
+}
+
+//-------------------------------------------------------------------
+//打开文件 对话框
+static std::string openFileDialog(HWND owner) {
+    OPENFILENAMEA ofn = {};                 //文件对话框结构体
+    ofn.lStructSize = sizeof(ofn);          //Windows要求设置结构体大小
+    ofn.hwndOwner = owner;                  //父窗口是owner
+    ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";
+    char buf[MAX_PATH] = {};                //定个260字节的数组
+    ofn.lpstrFile = buf;                    //指向buf来填路径
+    ofn.nMaxFile = MAX_PATH;                //缓冲区大小
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;  //文件必须存在，路径必须存在
+    return GetOpenFileNameA(&ofn) ? std::string(buf) : "";  //打开文件选择窗口（判断条件：“打开”则返回true，return字符串）
+}
+
+//-------------------------------------------------------------------
 //加载obj并上传至GPU
 static void loadModel(const std::string& path) {
     //释放旧的三角形数据
@@ -138,13 +161,6 @@ static void loadModel(const std::string& path) {
         p_cudaUploadBVH(g_hBVH.data(), g_numBVHNodes);
     //重置摄像机到默认视角
     g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.0f;
-}
-
-//-------------------------------------------------------------------
-//显示方法
-static void initDisplay(HWND hwnd, int w, int h) {
-    g_display.init(hwnd, w, h);
-    g_hFramebuf = new unsigned int[w * h];
 }
 
 //-------------------------------------------------------------------
@@ -205,20 +221,6 @@ static void renderFrame() {
             "Tris:%d | FPS:%.1f | Mode:%s | Res:%d ↑/↓ |[W]Wire [V]Voxel [O]Open [R]Reset",
             g_numTris, fps, modeStr, g_voxelResolution);
     SetWindowTextA(g_hwnd, title);
-}
-
-//-------------------------------------------------------------------
-//打开文件 对话框
-static std::string openFileDialog(HWND owner) {
-    OPENFILENAMEA ofn = {};                 //文件对话框结构体
-    ofn.lStructSize = sizeof(ofn);          //Windows要求设置结构体大小
-    ofn.hwndOwner = owner;                  //父窗口是owner
-    ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";
-    char buf[MAX_PATH] = {};                //定个260字节的数组
-    ofn.lpstrFile = buf;                    //指向buf来填路径
-    ofn.nMaxFile = MAX_PATH;                //缓冲区大小
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;  //文件必须存在，路径必须存在
-    return GetOpenFileNameA(&ofn) ? std::string(buf) : "";  //打开文件选择窗口（判断条件：“打开”则返回true，return字符串）
 }
 
 //-------------------------------------------------------------------

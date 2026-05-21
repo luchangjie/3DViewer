@@ -1,6 +1,3 @@
-//===================================================================
-//render.h - 头文件
-//===================================================================
 #ifndef __CUDACC__
 # ifndef __host__
 #  define __host__
@@ -8,14 +5,14 @@
 # ifndef __device__
 #  define __device__
 # endif
-# ifndef __forceinline__   //如果 __forceinline__ 未定义
-#  define __forceinline__ inline  //用标准 inline 替代
+# ifndef __forceinline__   
+#  define __forceinline__ inline  
 # endif
 #endif
 
 #include <cmath>
 #include <cstring>
-#include <cfloat>//浮点极限值头文件，obj_loader.cpp算包围盒用
+#include <cfloat>   //浮点极限值头文件，obj_loader.cpp算包围盒用
 
 //二维坐标
 struct Vec2 {
@@ -76,7 +73,7 @@ struct Mat4 {
         return r;
     }
     //点的位置变换（平移旋转缩放）
-    __host__ __device__ Vec3 mulPoint(const Vec3& v) const {//三维变四维（x,y,z,w=1）
+    __host__ __device__ Vec3 mulPoint(const Vec3& v) const {//v三维变四维（x,y,z,w=1）
         float x = m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z + m[3][0];
         float y = m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z + m[3][1];
         float z = m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z + m[3][2];
@@ -84,7 +81,7 @@ struct Mat4 {
         //透视除法，防0向量
         return (fabsf(w) > 1e-7f) ? Vec3(x / w, y / w, z / w) : Vec3(x, y, z);
     }
-    //方向向量变换
+    //向量变换（旋转缩放）
     __host__ __device__ Vec3 mulDir(const Vec3& v) const {
         return { m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z,
                  m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z,
@@ -149,23 +146,23 @@ struct Mat4 {
 
 //GPU端三角形
 struct GPUTriangle {
-    Vec3 v[3];//世界空间的三个顶点坐标
-    Vec3 normal;//面法线
-    unsigned char color[3];//RGB颜色值（0-255），该类型1字节，8位，256种
+    Vec3 v[3];                  //世界空间的三个顶点坐标
+    Vec3 normal;                //面法线
+    unsigned char color[3];     //RGB颜色值（0-255），该类型1字节，8位，256种
 };
 
-//渲染参数,从CPU传递给GPU，包含所有渲染所需的变换和光照参数(全局设置)
+//渲染参数,从CPU传递给GPU，包含所有渲染所需的变换和光照参数
 struct RenderParams {
     Mat4 mvp;       //模型-视图-投影 矩阵：模型空间到裁剪空间
     Mat4 modelView; //模型-视图矩阵：用于将法线变换到视图空间进行光照计算
     Vec3 lightDir;  //世界空间光照方向，指向光源
     Vec3 lightColor;//光源颜色
     Vec3 ambient;   //环境光颜色
+    float specPower;//高光指数（像镜面程度）
     int  width;     //帧缓冲宽度（像素）
     int  height;    //帧缓冲高度（像素）
     int  numTris;   //三角形总数     
-    int wireframe;  //非0为绘制线框模式
-    float specPower;//高光指数（像镜面程度）
+    int  wireframe; //非0为绘制线框模式
 };
 
 //一改：预计算三角形屏幕包围盒 + NDC 坐标
@@ -227,7 +224,7 @@ extern "C" {        //使用C语言链接规范（防止C++名称修饰，便于动态加载）
         int nameBufSize             //名称缓冲区大小
     );
 
-    //三改：上传 BVH 节点数据到 GPU 显存（应在 cudaUploadTriangles 之后调用）
+    //三改：上传 BVH 节点数据到 GPU 显存
     CUDA_API void cudaUploadBVH(
         const BVHNode* nodes,       //主机端 BVH 节点数组指针（由 buildBVH 生成）
         int numNodes                //节点总数
@@ -243,13 +240,6 @@ extern "C" {        //使用C语言链接规范（防止C++名称修饰，便于动态加载）
     CUDA_API void cudaRender(
         const RenderParams& params, //渲染参数（MVP矩阵、光源等）
         unsigned int* g_hFramebuf   //输出缓冲区指针（BGRA格式，至少 width*height*4 字节）
-    );
-
-    //导出体素化后的三角形为OBJ文件
-    extern "C" bool exportVoxelObj(
-        const char* path,           //输出文件路径
-        const GPUTriangle* tris,    //体素化后的三角形数组
-        int numTris                 //三角形数量
     );
 
     //释放所有GPU资源：在卸载DLL之前调用

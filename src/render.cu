@@ -13,7 +13,7 @@
 #include <cuda_runtime.h>				//CUDA运行时API
 #include <device_launch_parameters.h>	//设备启动参数（threadIdx, blockIdx等）
 #include <cfloat>
-
+#include <cstdio>
 //-------------------------- 全局GPU缓冲区 --------------------------
 static unsigned int* g_dFramebuf = nullptr;	//设备端帧缓冲区（BGRA格式，32位/像素）
 static float* g_dDepthbuf = nullptr;		//设备端深度缓冲区（32位浮点）
@@ -657,8 +657,8 @@ void clearKernel(unsigned int* framebuf, float* depthbuf, int width, int height)
 
 //导出DLL文件的API
 //初始化CUDA
-extern "C" CUDA_API
-int cudaInit(int width, int height, char* outName, int nameBufSize) {
+extern "C" 
+CUDA_API int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	//检测可用GPU数量
 	int devCount = 0;
 	cudaGetDeviceCount(&devCount);
@@ -687,9 +687,9 @@ int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	if (g_dTiles) cudaFree(g_dTiles);
 	if (g_dClippedTris) cudaFree(g_dClippedTris);
 	//分配新的GPU帧缓冲区和深度缓冲区
-	cudaError_t err1 = cudaMalloc(&g_dFramebuf, sz * sizeof(unsigned int));  //帧缓冲（BGRA像素）
-	cudaError_t err2 = cudaMalloc(&g_dDepthbuf, sz * sizeof(float));         //深度缓冲（浮点）
-	cudaError_t err3 = cudaMalloc(&g_dTriCache, g_maxClippedTris / 2 * sizeof(TriCached)); //预处理数据缓冲
+	cudaError_t err1 = cudaMalloc(&g_dFramebuf, sz * sizeof(unsigned int)); //帧缓冲（BGRA像素）
+	cudaError_t err2 = cudaMalloc(&g_dDepthbuf, sz * sizeof(float));        //深度缓冲（浮点）
+	cudaError_t err3 = cudaMalloc(&g_dTriCache, sz * sizeof(TriCached));	//预处理数据缓冲
 	cudaError_t err4 = cudaMalloc(&g_dTiles, tilesX * tilesY * sizeof(TileData));//分块内存
 	cudaError_t err5 = cudaMalloc(&g_dClippedTris, g_maxClippedTris * sizeof(ClippedTri));//裁剪后三角形缓冲
 	//检查内存分配是否成功
@@ -698,11 +698,11 @@ int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	return 0;  //成功
 }
 
-//三改：上传 BVH 节点数据到 GPU 显存（应在 cudaUploadTriangles 之后调用）
+//三改：上传 BVH 节点数据到 GPU 显存
 //nodes    - 主机端 BVH 节点数组指针（由 buildBVH 生成）
 //numNodes - 节点总数
-extern "C" CUDA_API
-void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
+extern "C" 
+CUDA_API void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
 	if (g_dBVH) {
 		cudaFree(g_dBVH);
 		g_dBVH = nullptr;
@@ -725,8 +725,8 @@ void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
 //将三角形数据上传到GPU显存（可多次调用以重新上传）
 //参数：tris - 主机端三角形数组指针
 //      numTris - 三角形数量
-extern "C" CUDA_API
-void cudaUploadTriangles(const GPUTriangle* tris, int numTris) {
+extern "C" 
+CUDA_API void cudaUploadTriangles(const GPUTriangle* tris, int numTris) {
 	if (g_dTris) {
 		cudaFree(g_dTris);     //释放GPU显存
 		g_dTris = nullptr;     //重置指针
@@ -751,16 +751,18 @@ void cudaUploadTriangles(const GPUTriangle* tris, int numTris) {
 //渲染一帧：执行光栅化和光照计算
 //参数：params - 渲染参数（MVP矩阵、光源等）
 //      g_hFramebuf - 输出缓冲区指针（BGRA格式，至少 width*height*4 字节）
-extern "C" CUDA_API
-void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
+extern "C" 
+CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 	//检查GPU缓冲区和输出指针是否有效
 	if (!g_dFramebuf || !g_dDepthbuf || !g_hFramebuf) return;
 	if (!g_dTris || !g_dTriCache || !g_dTiles || !g_dClippedTris) return;
 	//配置CUDA线程网格（每个线程块16×16线程）
 	dim3 block(16, 16);
+
 	//算需要线程块数，向上取整
 	dim3 grid((params.width + block.x - 1) / block.x,
 		(params.height + block.y - 1) / block.y);
+
 	//第一步：清屏
 	clearKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf, params.width, params.height);
 
@@ -804,8 +806,8 @@ void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
 }
 
 //释放所有GPU资源：在卸载DLL之前调用
-extern "C" CUDA_API
-void cudaShutdown(void)
+extern "C" 
+CUDA_API void cudaShutdown(void)
 {
 	//释放帧缓冲区
 	if (g_dFramebuf) {

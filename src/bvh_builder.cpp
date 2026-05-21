@@ -8,20 +8,20 @@
 struct BVHBuildTri {
     int  origIdx;            // 原始三角形索引（重排前）
     Vec3 center;             // 包围盒中心
-    Vec3 bmin, bmax;         // 轴对齐包围盒
+    Vec3 bmin, bmax;         // 包围盒最小点、最大点
 };
-// 递归构建 BVH，返回节点在 outNodes 中的索引
-// 构建完成后，tris 数组会被原地重排，使得叶子节点的三角形连续存放
-static int buildBVHRecursive(std::vector<BVHBuildTri>& buildTris,
-    int start, int end,
-    std::vector<BVHNode>& outNodes)
-{
-    // 【关键】先记录当前节点的索引，再 emplace，避免引用失效
-    int nodeIdx = (int)outNodes.size();
-    outNodes.emplace_back();            // 分配新节点，但不再持有引用
-    // 必须通过 outNodes[nodeIdx] 访问，不能用引用缓存
 
-    // 计算当前区间 [start, end) 内所有三角形的联合 AABB
+// 递归构建 BVH，返回节点在 outNodes 中的索引
+static int buildBVHRecursive(
+    std::vector<BVHBuildTri>& buildTris,    //要重排的三角形数组
+    int start, int end,                     //哪个区间的
+    std::vector<BVHNode>& outNodes)         //重排后的BVH节点数组
+{
+    int nodeIdx = (int)outNodes.size();     // 记录当前节点在数组中的位置
+    outNodes.emplace_back();                // 在数组末尾新增一个空节点
+    // 必须通过outNodes[nodeIdx]访问，不能用引用缓存，因为缓存可能由于递归扩容而引用失效
+
+    // 计算当前区间 [start, end) 内所有三角形的整体包围盒
     Vec3 lo(FLT_MAX, FLT_MAX, FLT_MAX);
     Vec3 hi(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     for (int i = start; i < end; ++i) {
@@ -32,7 +32,7 @@ static int buildBVHRecursive(std::vector<BVHBuildTri>& buildTris,
         hi.y = fmaxf(hi.y, buildTris[i].bmax.y);
         hi.z = fmaxf(hi.z, buildTris[i].bmax.z);
     }
-    // 【改】通过索引访问，而非引用
+    // 该节点的包围盒
     outNodes[nodeIdx].minX = lo.x;
     outNodes[nodeIdx].minY = lo.y;
     outNodes[nodeIdx].minZ = lo.z;
@@ -40,6 +40,7 @@ static int buildBVHRecursive(std::vector<BVHBuildTri>& buildTris,
     outNodes[nodeIdx].maxY = hi.y;
     outNodes[nodeIdx].maxZ = hi.z;
 
+    //一个叶子最多包含几个三角形
     int count = end - start;
     const int LEAF_MAX = 8;
 
@@ -52,24 +53,25 @@ static int buildBVHRecursive(std::vector<BVHBuildTri>& buildTris,
         return nodeIdx;
     }
 
-    // 内部节点：按最长轴分割
+    // 内部节点：选最长轴分割
     Vec3 extent = hi - lo;
-    int axis = 0;
+    int axis = 0;//默认x轴
     if (extent.y > extent.x) axis = 1;
     if (extent.z > (axis == 0 ? extent.x : extent.y)) axis = 2;
 
-    int mid = start + count / 2;
-    std::nth_element(buildTris.begin() + start,
-        buildTris.begin() + mid,
-        buildTris.begin() + end,
-        [axis](const BVHBuildTri& a, const BVHBuildTri& b) {
-            float av = (axis == 0) ? a.center.x : (axis == 1) ? a.center.y : a.center.z;
-            float bv = (axis == 0) ? b.center.x : (axis == 1) ? b.center.y : b.center.z;
-            return av < bv;
-        });
+    int mid = start + count / 2;//中点
+    std::nth_element(   //跟中点比较分成两堆
+        buildTris.begin() + start,  //起始
+        buildTris.begin() + mid,    //中点
+        buildTris.begin() + end,    //最后
+        [axis](const BVHBuildTri& a, const BVHBuildTri& b) {//比较方法
+            float av = (axis == 0) ? a.center.x : (axis == 1) ? a.center.y : a.center.z;// A在最长轴上的坐标
+            float bv = (axis == 0) ? b.center.x : (axis == 1) ? b.center.y : b.center.z;// B在最长轴上的坐标
+            return av < bv;                                                             // 按坐标从小到大排序
+        }
+    );
 
-    // 【关键】递归前先记录，递归后通过索引赋值
-    // 递归可能再次触发 emplace_back，但 nodeIdx 指向的旧位置仍然有效
+    // 递归，记录
     int leftIdx = buildBVHRecursive(buildTris, start, mid, outNodes);
     int rightIdx = buildBVHRecursive(buildTris, mid, end, outNodes);
 
@@ -79,14 +81,14 @@ static int buildBVHRecursive(std::vector<BVHBuildTri>& buildTris,
     outNodes[nodeIdx].triCount = 0;
     return nodeIdx;
 }
-// 对外接口：为三角形数组构建 BVH，并原地重排三角形顺序
-// 重排后，BVH 叶子节点的 triStart 直接对应 tris 数组下标，无需二次映射
+
+// 为三角形数组构建BVH，并原地重排三角形顺序
 void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes)
 {
     outNodes.clear();
     if (numTris <= 0) return;
 
-    // 1. 先为每个三角形计算 AABB 与中心
+    // 1. 先为每个三角形计算AABB与中心
     std::vector<BVHBuildTri> buildTris(numTris);
     for (int i = 0; i < numTris; ++i) {
         const GPUTriangle& tri = tris[i];
@@ -102,11 +104,10 @@ void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes)
         buildTris[i].center = (lo + hi) * 0.5f;
     }
 
-    // 2. 递归构建 BVH（节点写入 outNodes，同时确定重排顺序）
+    // 2. 递归构建BVH（节点写入outNodes，同时确定重排顺序）
     buildBVHRecursive(buildTris, 0, numTris, outNodes);
 
-    // 3. 按 buildTris 的顺序原地重排原始三角形数组
-    //    使得 BVH 叶子中记录的 triStart/triCount 直接指向连续内存
+    // 3. 按buildTris的顺序重排原始三角形数组tris
     std::vector<GPUTriangle> temp(numTris);
     for (int i = 0; i < numTris; ++i) {
         temp[i] = tris[buildTris[i].origIdx];
