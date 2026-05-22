@@ -1,6 +1,4 @@
-// Direct2DDisplay.h - 使用 Direct2D 高效显示像素缓冲区
 // 功能：将 BGRA 格式的像素数组显示到 Windows 窗口
-#pragma once
 #include <windows.h>
 #include <d2d1.h>           // Direct2D 头文件
 
@@ -16,7 +14,6 @@ private:
     bool valid = false;                         // 是否初始化成功
 
 public:
-    // 析构函数：自动释放资源
     ~Direct2DDisplay() { cleanup(); }
 
     // 释放所有 Direct2D 资源
@@ -27,9 +24,6 @@ public:
     }
 
     // 初始化 Direct2D
-    // hwnd - 目标窗口句柄
-    // w, h - 显示区域宽高
-    // 返回值：成功返回 true，失败返回 false
     bool init(HWND hwnd, int w, int h) {
         cleanup();                          // 先清理旧资源
         width = w;

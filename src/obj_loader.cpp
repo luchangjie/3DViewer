@@ -104,7 +104,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
                 tri.v[k].z = (tri.v[k].z - center.z) * scale;
             }
         }
-        //六：重新计算所有面法线保证变换后安全！！！
+        //六：重新计算所有面法线保证变换后安全
 #pragma omp parallel for
         for (int i = 0; i < (int)tris.size(); i++) {
                 auto& tri = tris[i];

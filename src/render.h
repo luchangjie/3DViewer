@@ -165,8 +165,8 @@ struct RenderParams {
     int  wireframe; //非0为绘制线框模式
 };
 
-//一改：预计算三角形屏幕包围盒 + NDC 坐标
-//所有数据都在GPU预处理阶段计算完成，光栅化阶段直接使用
+//一改：预计算三角形屏幕包围盒、NDC 坐标、基础颜色等
+//GPU预处理
 struct TriCached {
     float nx[3], ny[3], nz[3];      //NDC 坐标（不需要裁剪的三角形直接使用）
     short minX, maxX, minY, maxY;   //屏幕像素包围盒（精确计算，不再是全屏幕）
@@ -189,7 +189,7 @@ struct ClippedTri {
 
 //二改：屏幕分块：每个块存覆盖它的三角形索引列表
 #define TILE_SIZE 16
-#define MAX_TRIS_PER_TILE 40960     //每块最多 n 个三角形
+#define MAX_TRIS_PER_TILE 50000     //每块最多 n 个三角形
 
 struct TileData {
     int triIdx[MAX_TRIS_PER_TILE];  //三角形索引
@@ -209,7 +209,7 @@ struct BVHNode {
 };
 
 //DLL引入API（实现在render.cu）
-#ifdef BUILDING_CUDA_DLL    //如果是构建dll
+#ifdef BUILDING_CUDA_DLL    //如果是构建dll（在CUDA C/C++里添加预处理器）
 # define CUDA_API __declspec(dllexport)//就定义为导出函数(微软dll导出表函数标记，标记函数后使dll内指定函数被exe可见)
 #else                       //否则
 # define CUDA_API           //定义为空

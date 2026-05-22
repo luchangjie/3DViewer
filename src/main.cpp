@@ -309,7 +309,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         else if (wp == VK_UP) {         // 上箭头：增加密度（仅在非体素模式）
             if (!g_voxelMode) {
-                g_voxelResolution = fminf(1536, g_voxelResolution + 8);
+                g_voxelResolution = fminf(1280, g_voxelResolution + 8);
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
         }

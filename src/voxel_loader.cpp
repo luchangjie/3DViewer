@@ -41,17 +41,15 @@ static const int faceNeighbors[6][3] = {
     {0, -1, 0}   // 下面 (-Y)
 };
 
-// 使用位图代替unordered_set，性能提升10倍，内存减少80%
-// 对于192分辨率，只需要192*192*192/8=874KB内存
+// 使用位图代替unordered_set
 class VoxelBitmap {
 private:
     unsigned char* data;
-    int sizeX, sizeY, sizeZ;
+    int sizeX, sizeY, sizeZ;    //xyz方向体素数（1位）
     int strideY, strideZ;
 
-    // MSVC兼容的popcount函数（计算一个字节中1的个数）
+    //获取该数值b二进制表示里1的数量
     static inline int popcount(unsigned char b) {
-        // 查表法：速度最快，且完全兼容所有编译器
         static const unsigned char table[] = {
             0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,
             1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
@@ -74,40 +72,62 @@ private:
     }
 
 public:
+    //整盒，1代表有体素，0代表无体素
     VoxelBitmap(int x, int y, int z) : sizeX(x), sizeY(y), sizeZ(z) {
-        strideY = (x + 7) / 8;
-        strideZ = strideY * y;
-        size_t totalBytes = (size_t)strideZ * z;
-        data = new unsigned char[totalBytes](); // 初始化为0
+        strideY = (x + 7) / 8;  //每行有多少int
+        strideZ = strideY * y;  //每层有多少int
+        size_t totalBytes = (size_t)strideZ * z; //整盒有有多少int
+        data = new unsigned char[totalBytes]();  //全初始化为0
     }
 
     ~VoxelBitmap() {
         delete[] data;
     }
 
+    //标记索引idx处为“有”体素
     void set(int x, int y, int z) {
         size_t idx = (size_t)z * strideZ + (size_t)y * strideY + x / 8;
         data[idx] |= 1 << (x % 8);
     }
-
+    //查询索引idx处有无体素
     bool get(int x, int y, int z) const {
         if (x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ)
             return false;
         size_t idx = (size_t)z * strideZ + (size_t)y * strideY + x / 8;
         return (data[idx] & (1 << (x % 8))) != 0;
     }
-
+    //统计体素数
     int count() const {
         int cnt = 0;
         size_t totalBytes = (size_t)strideZ * sizeZ;
         for (size_t i = 0; i < totalBytes; ++i) {
-            cnt += popcount(data[i]);
+            cnt += popcount(data[i]);//就是所有1的个数加起来
         }
         return cnt;
     }
 };
 
-// 精确的三角形-体素相交检测（分离轴定理，高分辨率优化版）
+// 粗略的三角形-AABB 碰撞检测
+static bool triangleAABBIntersect(const GPUTriangle& tri,
+    float minX, float minY, float minZ,
+    float maxX, float maxY, float maxZ)
+{
+    const Vec3& v0 = tri.v[0];
+    const Vec3& v1 = tri.v[1];
+    const Vec3& v2 = tri.v[2];
+    float triMinX = fminf(v0.x, fminf(v1.x, v2.x));
+    float triMaxX = fmaxf(v0.x, fmaxf(v1.x, v2.x));
+    float triMinY = fminf(v0.y, fminf(v1.y, v2.y));
+    float triMaxY = fmaxf(v0.y, fmaxf(v1.y, v2.y));
+    float triMinZ = fminf(v0.z, fminf(v1.z, v2.z));
+    float triMaxZ = fmaxf(v0.z, fmaxf(v1.z, v2.z));
+    if (triMaxX < minX || triMinX > maxX) return false;
+    if (triMaxY < minY || triMinY > maxY) return false;
+    if (triMaxZ < minZ || triMinZ > maxZ) return false;
+    return true;
+}
+
+// 精确的三角形-体素相交检测（分离轴定理）c为center
 static bool triangleVoxelIntersect(const GPUTriangle& tri,
     float cx, float cy, float cz, float halfSize)
 {
@@ -117,7 +137,7 @@ static bool triangleVoxelIntersect(const GPUTriangle& tri,
     Vec3 v2 = tri.v[2] - Vec3(cx, cy, cz);
 
     // 快速AABB测试（先过滤掉明显不相交的情况）
-    const float EPS = 1e-4f; // 增大容差以适应高分辨率
+    const float EPS = 1e-4f; // 修正浮点精度误差
     float minX = fminf(v0.x, fminf(v1.x, v2.x));
     float maxX = fmaxf(v0.x, fmaxf(v1.x, v2.x));
     if (maxX < -halfSize - EPS || minX > halfSize + EPS) return false;
@@ -140,7 +160,7 @@ static bool triangleVoxelIntersect(const GPUTriangle& tri,
     Vec3 a1(0, 1, 0);
     Vec3 a2(0, 0, 1);
 
-    // 测试轴：三角形边 × 体素轴（共9个）
+    // 测试1：三角形边 × 体素轴（共9个）
     Vec3 axes[] = {
         a0.cross(e0), a0.cross(e1), a0.cross(e2),
         a1.cross(e0), a1.cross(e1), a1.cross(e2),
@@ -156,18 +176,18 @@ static bool triangleVoxelIntersect(const GPUTriangle& tri,
         float p0 = v0.dot(axis);
         float p1 = v1.dot(axis);
         float p2 = v2.dot(axis);
+        //三角形投影范围
         float triMin = fminf(p0, fminf(p1, p2));
         float triMax = fmaxf(p0, fmaxf(p1, p2));
-
+        //AABB投影到该轴单方向
         float boxProj = halfSize * (fabsf(a0.dot(axis)) + fabsf(a1.dot(axis)) + fabsf(a2.dot(axis)));
 
-        // 添加epsilon容差，解决高分辨率下的浮点精度问题
         if (triMax < -boxProj - 1e-5f || triMin > boxProj + 1e-5f) {
             return false; // 分离轴存在，不相交
         }
     }
 
-    // 测试三角形法线轴
+    // 测试2：三角形法线轴
     Vec3 normal = e0.cross(e1).norm();
     float p0 = v0.dot(normal);
     float p1 = v1.dot(normal);
@@ -181,26 +201,6 @@ static bool triangleVoxelIntersect(const GPUTriangle& tri,
     }
 
     // 所有轴都通过，相交
-    return true;
-}
-
-// 三角形-AABB 碰撞检测（保留你原来的函数，用于空间哈希网格）
-static bool triangleAABBIntersect(const GPUTriangle& tri,
-    float minX, float minY, float minZ,
-    float maxX, float maxY, float maxZ)
-{
-    const Vec3& v0 = tri.v[0];
-    const Vec3& v1 = tri.v[1];
-    const Vec3& v2 = tri.v[2];
-    float triMinX = fminf(v0.x, fminf(v1.x, v2.x));
-    float triMaxX = fmaxf(v0.x, fmaxf(v1.x, v2.x));
-    float triMinY = fminf(v0.y, fminf(v1.y, v2.y));
-    float triMaxY = fmaxf(v0.y, fmaxf(v1.y, v2.y));
-    float triMinZ = fminf(v0.z, fminf(v1.z, v2.z));
-    float triMaxZ = fmaxf(v0.z, fmaxf(v1.z, v2.z));
-    if (triMaxX < minX || triMinX > maxX) return false;
-    if (triMaxY < minY || triMinY > maxY) return false;
-    if (triMaxZ < minZ || triMinZ > maxZ) return false;
     return true;
 }
 
@@ -317,14 +317,14 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
         << " 个网格单元，平均每单元 " << (float)tris.size() / (GRID_RES * GRID_RES * GRID_RES)
         << " 个三角形" << std::endl;
 
-    // 第五步：OpenMP多线程遍历体素（使用位图代替unordered_set）
+    // 第五步：OpenMP多线程遍历体素
     VoxelBitmap voxelBitmap(resolution, resolution, resolution);
 
     std::cout << "[VOXEL] 开始体素化，分辨率: " << resolution << "x" << resolution << "x" << resolution
-        << "，总共有 " << resolution * resolution * resolution << " 个体素" << std::endl;
+        << "，总共有 " << (size_t)resolution * (size_t)resolution * (size_t)resolution << " 个体素" << std::endl;
 
     // OpenMP并行处理X轴（最外层循环）
-    // 自动使用所有CPU核心，性能与C++17并行算法相当
+    // 自动使用所有CPU核心
 #pragma omp parallel for schedule(dynamic)
     for (int ix = 0; ix < resolution; ix++) {
         for (int iy = 0; iy < resolution; iy++) {

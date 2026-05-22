@@ -1,15 +1,4 @@
-﻿//===================================================================
-//render.cu - CUDA光栅化+内存管理（终极高性能版）
-//已修复：
-//1. 相机靠近时模型消失问题（近裁剪面奇点）
-//2. 近距离帧率暴跌问题（全屏幕包围盒导致的O(n²)复杂度）
-//核心优化：
-//- 预处理阶段完成近裁剪面裁剪（每个三角形只裁剪一次，而非每个像素）
-//- 精确计算裁剪后三角形的保守包围盒（替代全屏幕包围盒）
-//- 缓存所有可预计算的数据，避免光栅化阶段重复计算
-//- 动态调整阈值，只在真正必要时触发特殊处理
-//===================================================================
-#include "render.h"
+﻿#include "render.h"
 #include <cuda_runtime.h>				//CUDA运行时API
 #include <device_launch_parameters.h>	//设备启动参数（threadIdx, blockIdx等）
 #include <cfloat>
@@ -26,41 +15,26 @@ static TileData* g_dTiles = nullptr;		//屏幕分块数据（每个块存覆盖�
 static int g_tilesX = 0, g_tilesY = 0;		//X和Y方向的分块数量
 static BVHNode* g_dBVH = nullptr;			//设备端BVH加速结构节点数组
 static int g_numBVHNodes = 0;				//BVH节点总数
-static ClippedTri* g_dClippedTris = nullptr;//裁剪后的三角形数组（每个原三角形最多2个）
-static int g_maxClippedTris = 50000000;     //最大支持的裁剪后三角形数量（与原三角形相同）
+static ClippedTri* g_dClippedTris = nullptr;// 设备端裁剪三角形缓冲区
+static int g_clippedTrisCapacity = 0;       // 当前缓冲区容量（最多容纳多少个 ClippedTri）
 
-//-------------------------- 核心工具函数 --------------------------
-/**
- * 边函数：计算点相对于线段的位置
- * 返回值：有符号面积的两倍
- * 正数：点在线段右侧（顺时针方向）
- * 负数：点在线段左侧（逆时针方向）
- * 零：点在线段上
- */
+//PA×BA，得有符号面积的两倍
 __device__ __forceinline__
 float edgeFunc(float ax, float ay, float bx, float by, float px, float py) {
 	return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
 }
 
-/**
- * 近裁剪面裁剪：将三角形裁剪到 w >= zNear（即 z_ndc >= -1）
- * 这是解决"相机靠近模型消失"问题的核心函数
- * 原理：Sutherland-Hodgman算法，只对近裁剪面进行单次裁剪
- *
- * 输入：裁剪空间的三个顶点 (cx, cy, cz, cw)
- * 输出：裁剪后的顶点列表（最多2个三角形，6个顶点）
- * 返回值：输出的顶点数量（0=完全剔除，3=1个三角形，6=2个三角形）
- */
-__device__ int clipTriangleToNearPlane(
-	float cx0, float cy0, float cz0, float cw0,
+//-------------------------------------------------------------------
+//近裁剪面裁剪：将三角形裁剪到 w >= zNear（即 z_ndc >= -1），解决"相机靠近模型消失"
+//原理：Sutherland-Hodgman算法，只对近裁剪面进行单次裁剪
+
+__device__ int clipTriangleToNearPlane(			//返回值：输出的顶点数量（0=完全剔除，3=1个三角形，6=2个三角形）
+	float cx0, float cy0, float cz0, float cw0,	
 	float cx1, float cy1, float cz1, float cw1,
-	float cx2, float cy2, float cz2, float cw2,
-	float outVerts[6][4]) //输出：裁剪后的顶点(x,y,z,w)
+	float cx2, float cy2, float cz2, float cw2,	//输入：裁剪空间的三个顶点 (cx, cy, cz, cw)
+	float outVerts[6][4])						//输出：裁剪后的顶点(x,y,z,w)
 {
 	//计算每个顶点到近裁剪面的距离
-	//推导：z_ndc = cz/cw >= -1 → cz >= -cw → cz + cw >= 0
-	//d > 0：顶点在近裁剪面之后（可见）
-	//d <= 0：顶点在近裁剪面之前（不可见）
 	float d0 = cz0 + cw0;
 	float d1 = cz1 + cw1;
 	float d2 = cz2 + cw2;
@@ -71,7 +45,7 @@ __device__ int clipTriangleToNearPlane(
 	if (d1 > 1e-6f) insideCount++;
 	if (d2 > 1e-6f) insideCount++;
 
-	//情况1：所有顶点都在近裁剪面之后 → 不需要裁剪，直接返回原三角形
+	//情况1：所有顶点都在近裁剪面之后 → 不用裁剪，返回原三角形
 	if (insideCount == 3) {
 		outVerts[0][0] = cx0; outVerts[0][1] = cy0; outVerts[0][2] = cz0; outVerts[0][3] = cw0;
 		outVerts[1][0] = cx1; outVerts[1][1] = cy1; outVerts[1][2] = cz1; outVerts[1][3] = cw1;
@@ -86,44 +60,39 @@ __device__ int clipTriangleToNearPlane(
 
 	//情况3：1个顶点在后面，2个在前面 → 裁剪成1个三角形
 	if (insideCount == 1) {
-		int i0, i1, i2;
-		float d0_, d1_, d2_;
-		float cx0_, cy0_, cz0_, cw0_;
+		float d0_, d1_, d2_;			//改变循环顺序后新012点的距离
+		float cx0_, cy0_, cz0_, cw0_;	//新0号顶点
 		float cx1_, cy1_, cz1_, cw1_;
 		float cx2_, cy2_, cz2_, cw2_;
 
-		//找到在后面的那个顶点，统一为i0
+		//找到在后面的那个顶点，统一为i0，依次顺时针换点
 		if (d0 > 1e-6f) {
-			i0 = 0; i1 = 1; i2 = 2;
 			d0_ = d0; d1_ = d1; d2_ = d2;
 			cx0_ = cx0; cy0_ = cy0; cz0_ = cz0; cw0_ = cw0;
 			cx1_ = cx1; cy1_ = cy1; cz1_ = cz1; cw1_ = cw1;
 			cx2_ = cx2; cy2_ = cy2; cz2_ = cz2; cw2_ = cw2;
 		}
 		else if (d1 > 1e-6f) {
-			i0 = 1; i1 = 2; i2 = 0;
 			d0_ = d1; d1_ = d2; d2_ = d0;
 			cx0_ = cx1; cy0_ = cy1; cz0_ = cz1; cw0_ = cw1;
 			cx1_ = cx2; cy1_ = cy2; cz1_ = cz2; cw1_ = cw2;
 			cx2_ = cx0; cy2_ = cy0; cz2_ = cz0; cw2_ = cw0;
 		}
 		else {
-			i0 = 2; i1 = 0; i2 = 1;
 			d0_ = d2; d1_ = d0; d2_ = d1;
 			cx0_ = cx2; cy0_ = cy2; cz0_ = cz2; cw0_ = cw2;
 			cx1_ = cx0; cy1_ = cy0; cz1_ = cz0; cw1_ = cw0;
 			cx2_ = cx1; cy2_ = cy1; cz2_ = cz1; cw2_ = cw1;
 		}
 
-		//计算边 i0-i1 与近裁剪面的交点
-		//线性插值：t = d0_ / (d0_ - d1_)
+		//计算边 i0-i1 与近裁剪面的交点坐标
 		float t1 = d0_ / (d0_ - d1_);
 		float x1 = cx0_ + t1 * (cx1_ - cx0_);
 		float y1 = cy0_ + t1 * (cy1_ - cy0_);
 		float z1 = cz0_ + t1 * (cz1_ - cz0_);
 		float w1 = cw0_ + t1 * (cw1_ - cw0_);
 
-		//计算边 i0-i2 与近裁剪面的交点
+		//计算边 i0-i2 与近裁剪面的交点坐标
 		float t2 = d0_ / (d0_ - d2_);
 		float x2 = cx0_ + t2 * (cx2_ - cx0_);
 		float y2 = cy0_ + t2 * (cy2_ - cy0_);
@@ -138,14 +107,14 @@ __device__ int clipTriangleToNearPlane(
 	}
 
 	//情况4：2个顶点在后面，1个在前面 → 裁剪成2个三角形（4个顶点）
-	else { //insideCount == 2
+	else { 
 		int i0, i1, i2;
 		float d0_, d1_, d2_;
 		float cx0_, cy0_, cz0_, cw0_;
 		float cx1_, cy1_, cz1_, cw1_;
 		float cx2_, cy2_, cz2_, cw2_;
 
-		//找到在前面的那个顶点，统一为i0
+		//相反，找到在前面的那个顶点，统一为i0
 		if (d0 <= 1e-6f) {
 			i0 = 0; i1 = 1; i2 = 2;
 			d0_ = d0; d1_ = d1; d2_ = d2;
@@ -195,27 +164,17 @@ __device__ int clipTriangleToNearPlane(
 	}
 }
 
-//-------------------------- 预处理内核 --------------------------
-/**
- * 三角形预处理内核：所有与像素无关的计算都在这里完成
- * 这是性能提升最大的优化点：将O(n²)的计算量降为O(n)
- *
- * 完成的工作：
- * 1. 计算裁剪空间坐标
- * 2. 近裁剪面裁剪（每个三角形只裁剪一次）
- * 3. 计算基础光照（漫反射+环境光，与像素位置无关）
- * 4. 计算精确的屏幕像素包围盒
- * 5. 生成裁剪后的三角形列表
- */
+//-------------------------------------------------------------------
+//三角形预处理内核（每帧）
 __global__ void computeTriCacheKernel(
-	TriCached* triCache,
-	ClippedTri* clippedTris,
+	TriCached* triCache,		//out
+	ClippedTri* clippedTris,	//out
 	const GPUTriangle* tris,
 	int numTris,
 	RenderParams p)
 {
-	int t = blockIdx.x * blockDim.x + threadIdx.x; //每个线程处理一个三角形
-	if (t >= numTris) return; //超出范围的线程直接返回
+	int t = blockIdx.x * blockDim.x + threadIdx.x;	//每个线程处理一个三角形
+	if (t >= numTris) return;						//超出范围的线程直接返回
 
 	const GPUTriangle& tri = tris[t];
 	TriCached& tc = triCache[t];
@@ -228,7 +187,7 @@ __global__ void computeTriCacheKernel(
 	for (int k = 0; k < 3; ++k) {
 		float vx = tri.v[k].x, vy = tri.v[k].y, vz = tri.v[k].z;
 
-		//MVP矩阵乘法：模型空间 → 裁剪空间
+		//MVP矩阵，模型空间 → 裁剪空间
 		cx[k] = p.mvp.m[0][0] * vx + p.mvp.m[1][0] * vy + p.mvp.m[2][0] * vz + p.mvp.m[3][0];
 		cy[k] = p.mvp.m[0][1] * vx + p.mvp.m[1][1] * vy + p.mvp.m[2][1] * vz + p.mvp.m[3][1];
 		cz[k] = p.mvp.m[0][2] * vx + p.mvp.m[1][2] * vy + p.mvp.m[2][2] * vz + p.mvp.m[3][2];
@@ -239,9 +198,7 @@ __global__ void computeTriCacheKernel(
 			backCount++;
 			needClip = true;
 		}
-		//优化1：动态阈值调整
-		//只有当w非常小时（<0.01）才需要裁剪，避免不必要的计算
-		//这个值是经验值，平衡了性能和正确性
+		//顶点在相机前方很近
 		else if (cw[k] < 0.01f) {
 			needClip = true;
 		}
@@ -256,7 +213,6 @@ __global__ void computeTriCacheKernel(
 	}
 
 	//第二步：基础光照计算（与裁剪无关，提前计算）
-	//这部分计算与像素位置无关，每个三角形只需要计算一次
 	Vec3 N = tri.normal;
 	//计算原始三角形的面积和面朝向
 	float area = edgeFunc(
@@ -280,7 +236,7 @@ __global__ void computeTriCacheKernel(
 	Vec3 L = p.lightDir;
 	float keyDiff = fmaxf(N.dot(L), 0.f); //负数钳制为0（背面不接收光照）
 
-	//补光漫反射（模拟环境光的方向性）
+	//补光漫反射
 	Vec3 fillDir = { -0.4f, -0.3f, 0.6f };
 	float fillDiff = fmaxf(N.dot(fillDir.norm()), 0.f);
 
@@ -304,8 +260,7 @@ __global__ void computeTriCacheKernel(
 		+ fillDiff * 0.4f * baseB
 	);
 
-	//第三步：近裁剪面裁剪（优化4：预处理阶段完成，每个三角形只裁剪一次）
-	//这是解决"近距离帧率暴跌"的核心：将原本每个像素都要执行的裁剪，移到这里
+	//第三步：近裁剪面裁剪
 	float clippedVerts[6][4];
 	int numVerts = clipTriangleToNearPlane(
 		cx[0], cy[0], cz[0], cw[0],
@@ -314,7 +269,7 @@ __global__ void computeTriCacheKernel(
 		clippedVerts
 	);
 
-	//裁剪后完全不可见，剔除
+	//裁剪后完全不可见，则剔除
 	if (numVerts == 0) {
 		tc.minX = tc.maxX = tc.minY = tc.maxY = -2;
 		tc.area = 0.f;
@@ -322,8 +277,7 @@ __global__ void computeTriCacheKernel(
 		return;
 	}
 
-	//第四步：生成裁剪后的三角形并计算精确包围盒（优化3）
-	//替代了之前简单粗暴的全屏幕包围盒，大大减少了无效的三角形-像素测试
+	//第四步：生成裁剪后的三角形并计算精确包围盒
 	tc.clippedTriStart = t * 2; //每个原三角形最多生成2个裁剪后三角形
 	tc.clippedTriCount = numVerts / 3;
 
@@ -356,8 +310,7 @@ __global__ void computeTriCacheKernel(
 	}
 
 	//第五步：计算精确的屏幕像素包围盒
-	//NDC坐标(-1,-1)到(1,1) → 屏幕坐标(0,0)到(width-1, height-1)
-	//Y轴翻转：NDC的(0,1)是屏幕顶部，(0,-1)是屏幕底部
+	//NDC坐标(-1,1)到(1,-1) → 屏幕坐标(0,0)到(width, height)
 	tc.minX = fmaxf(0, fminf(p.width - 1, (int)((minX + 1.0f) * 0.5f * p.width) - 1));
 	tc.maxX = fmaxf(0, fminf(p.width - 1, (int)((maxX + 1.0f) * 0.5f * p.width) + 1));
 	tc.minY = fmaxf(0, fminf(p.height - 1, (int)((1.0f - maxY) * 0.5f * p.height)));
@@ -374,21 +327,19 @@ __global__ void computeTriCacheKernel(
 	}
 }
 
-//-------------------------- BVH加速内核 --------------------------
-/**
- * 将BVH节点的模型空间AABB保守投影到屏幕像素空间
- * 用于快速剔除完全不可见的BVH节点
- */
-__device__ bool nodeScreenBounds(const BVHNode& node, const Mat4& mvp,
+//将BVH节点的模型空间AABB保守投影到屏幕像素空间，用于快速剔除完全不可见的BVH节点
+__device__ bool nodeScreenBounds(
+	const BVHNode& node, 
+	const Mat4& mvp,
 	int width, int height,
-	int& outMinX, int& outMaxX, int& outMinY, int& outMaxY)
+	int& outMinX, int& outMaxX, int& outMinY, int& outMaxY)	//out
 {
 	float minX = 1e30f, maxX = -1e30f;
 	float minY = 1e30f, maxY = -1e30f;
 	bool anyFront = false;
 	bool nearPlaneIntersect = false;
 
-	//AABB的8个角点坐标（模型空间）
+	//AABB的8个角坐标（模型空间）
 	float cx[8] = { node.minX, node.maxX, node.minX, node.maxX,
 					node.minX, node.maxX, node.minX, node.maxX };
 	float cy[8] = { node.minY, node.minY, node.maxY, node.maxY,
@@ -404,11 +355,12 @@ __device__ bool nodeScreenBounds(const BVHNode& node, const Mat4& mvp,
 		float wz = mvp.m[0][2] * x + mvp.m[1][2] * y + mvp.m[2][2] * z + mvp.m[3][2];
 		float ww = mvp.m[0][3] * x + mvp.m[1][3] * y + mvp.m[2][3] * z + mvp.m[3][3];
 
+		//相机后方不能投影，不参与包围盒
 		if (ww <= 1e-6f) {
 			nearPlaneIntersect = true;
 			continue;
 		}
-		//优化1：与三角形预处理保持相同的阈值
+		//前方过近可投影，参与包围盒
 		else if (ww < 0.01f) {
 			nearPlaneIntersect = true;
 		}
@@ -427,16 +379,15 @@ __device__ bool nodeScreenBounds(const BVHNode& node, const Mat4& mvp,
 	//所有角点都在相机后方，整个节点不可见
 	if (!anyFront) return false;
 
-	//优化3：如果与近裁剪面相交，保守地将包围盒扩展到整个屏幕
-	//这是为了避免BVH节点被错误剔除，虽然会增加一些计算量，但比全屏幕包围盒好得多
+	//如果与近裁剪面相交，将包围盒扩展到整个屏幕
 	if (nearPlaneIntersect) {
 		outMinX = 0;
 		outMaxX = width - 1;
 		outMinY = 0;
 		outMaxY = height - 1;
 	}
+	//不相交就精确包围盒
 	else {
-		//向外扩展1像素，确保保守性
 		outMinX = fmaxf(0, (int)floorf(minX) - 1);
 		outMaxX = fminf(width - 1, (int)ceilf(maxX) + 1);
 		outMinY = fmaxf(0, (int)floorf(minY) - 1);
@@ -445,11 +396,7 @@ __device__ bool nodeScreenBounds(const BVHNode& node, const Mat4& mvp,
 	return true;
 }
 
-//-------------------------- 分块构建内核 --------------------------
-/**
- * 屏幕分块构建内核：为每个屏幕块生成覆盖它的三角形索引列表
- * 这是光栅化阶段的核心优化：将O(n)的三角形遍历降为O(k)，k是每个块的三角形数
- */
+//分块构建内核
 __global__ void buildTileKernel(
 	TileData* tiles,
 	const TriCached* triCache,
@@ -474,7 +421,7 @@ __global__ void buildTileKernel(
 	int tileMinY = ty * TILE_SIZE;
 	int tileMaxY = fminf((ty + 1) * TILE_SIZE - 1, height - 1);
 
-	//若BVH未上传（兼容旧逻辑），回退到暴力遍历
+	//若BVH未上传，回退到暴力遍历
 	if (!bvhNodes || numBVHNodes == 0) {
 		for (int t = 0; t < numTris && tile.triCount < MAX_TRIS_PER_TILE; ++t) {
 			const TriCached& tc = triCache[t];
@@ -491,7 +438,7 @@ __global__ void buildTileKernel(
 	}
 
 	//BVH栈遍历：只访问可能与当前块相交的节点
-	int stack[64]; //显式栈，深度足够容纳2^64个节点（实际log2(N) < 25）
+	int stack[64]; //显式栈，深度足够容纳2^64个节点
 	int sp = 0;
 	stack[sp++] = 0; //根节点索引固定为0
 
@@ -531,14 +478,10 @@ __global__ void buildTileKernel(
 	}
 }
 
-//-------------------------- 主光栅化内核 --------------------------
-/**
- * 主光栅化内核：每个线程处理一个像素
- * 优化后：使用预处理好的所有数据，不再进行任何裁剪或重复计算
- */
+//主光栅化内核，每像素一线程
 __global__
 void rasterizeKernel(
-	unsigned int* framebuf,
+	unsigned int* framebuf,	//out
 	float* depthbuf,
 	const TriCached* triCache,
 	const ClippedTri* clippedTris,
@@ -557,7 +500,8 @@ void rasterizeKernel(
 	const TileData& tile = tiles[tileIdx];
 	if (tile.triCount == 0) return; //没有三角形覆盖的块直接返回
 
-	int idx = py * p.width + px; //像素在帧缓冲中的线性索引
+	int idx = py * p.width + px; //像素索引
+
 	//像素中心的NDC坐标（+0.5是为了采样像素中心）
 	float ndcX = (px + 0.5f) / p.width * 2.f - 1.f;
 	float ndcY = 1.f - (py + 0.5f) / p.height * 2.f;
@@ -565,13 +509,13 @@ void rasterizeKernel(
 	float bestZ = depthbuf[idx];			//当前最浅的深度值（初始为FLT_MAX）
 	unsigned int bestColor = framebuf[idx];	//当前最浅像素的颜色
 
-	//只遍历当前块中的三角形（这是分块优化的核心）
+	//只遍历当前块中的三角形
 	for (int i = 0; i < tile.triCount; ++i) {
 		int t = tile.triIdx[i];
 		const TriCached& tc = triCache[t];
 		if (tc.clippedTriCount == 0) continue;
 
-		//包围盒快速剔除：如果像素不在三角形的包围盒内，直接跳过
+		//包围盒快速剔除
 		if (px < tc.minX || px > tc.maxX || py < tc.minY || py > tc.maxY)
 			continue;
 
@@ -597,10 +541,10 @@ void rasterizeKernel(
 			float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / ct.area;
 			float w2 = 1.f - w0 - w1;
 
-			//重心坐标有负数 → 像素在三角形外部，跳过
+			//重心坐标有负数，则像素在三角形外部，跳过
 			if (w0 < -1e-6f || w1 < -1e-6f || w2 < -1e-6f) continue;
 
-			//线框模式：只渲染三角形边缘
+			//====线框模式：只渲染三角形边缘====
 			if (p.wireframe) {
 				float thresh = 0.025f; //线框宽度
 				if (w0 > thresh && w1 > thresh && w2 > thresh) continue;
@@ -611,9 +555,9 @@ void rasterizeKernel(
 			if (z >= bestZ) continue;
 			bestZ = z; //更新最浅深度
 
-			//Blinn-Phong光照计算（只有高光部分，基础色已预计算）
+			//高光计算
 			Vec3 N = p.modelView.mulDir(tc.normal).norm();
-			if (ct.flipped != tc.flipped) N = -N; //裁剪后面朝向可能改变
+			if (ct.flipped != tc.flipped) N = -N; //裁剪后，面朝向可能改变
 
 			Vec3 L = p.lightDir;
 			Vec3 V = { 0.f,0.f,1.f }; //观察方向（看向屏幕外）
@@ -625,11 +569,11 @@ void rasterizeKernel(
 			float g = fminf(1.f, tc.baseG + spec * 0.4f);
 			float b = fminf(1.f, tc.baseB + spec * 0.4f);
 
-			//打包成BGRA格式（Windows DIB标准）
+			//打包成BGRA格式
 			bestColor = ((unsigned int)(tc.alpha * 255.0f) << 24)				//Alpha通道
 				| ((unsigned int)(fminf(1.0f, b * tc.alpha) * 255.0f) << 16)	//蓝色分量
 				| ((unsigned int)(fminf(1.0f, g * tc.alpha) * 255.0f) << 8)		//绿色分量
-				|  (unsigned int)(fminf(1.0f, r * tc.alpha) * 255.0f);			//红色分量
+				| (unsigned int)(fminf(1.0f, r * tc.alpha) * 255.0f);			//红色分量
 		}
 	}
 
@@ -655,9 +599,11 @@ void clearKernel(unsigned int* framebuf, float* depthbuf, int width, int height)
 	depthbuf[idx] = FLT_MAX;
 }
 
-//导出DLL文件的API
+
+
+//========================导出DLL文件的API======================
 //初始化CUDA
-extern "C" 
+extern "C"
 CUDA_API int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	//检测可用GPU数量
 	int devCount = 0;
@@ -686,23 +632,25 @@ CUDA_API int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	if (g_dTriCache) cudaFree(g_dTriCache);
 	if (g_dTiles) cudaFree(g_dTiles);
 	if (g_dClippedTris) cudaFree(g_dClippedTris);
+
+
 	//分配新的GPU帧缓冲区和深度缓冲区
 	cudaError_t err1 = cudaMalloc(&g_dFramebuf, sz * sizeof(unsigned int)); //帧缓冲（BGRA像素）
 	cudaError_t err2 = cudaMalloc(&g_dDepthbuf, sz * sizeof(float));        //深度缓冲（浮点）
-	cudaError_t err3 = cudaMalloc(&g_dTriCache, sz * sizeof(TriCached));	//预处理数据缓冲
-	cudaError_t err4 = cudaMalloc(&g_dTiles, tilesX * tilesY * sizeof(TileData));//分块内存
-	cudaError_t err5 = cudaMalloc(&g_dClippedTris, g_maxClippedTris * sizeof(ClippedTri));//裁剪后三角形缓冲
+	cudaError_t err3 = cudaMalloc(&g_dTiles, tilesX * tilesY * sizeof(TileData));//分块内存
+
 	//检查内存分配是否成功
-	if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess ||
-		err4 != cudaSuccess || err5 != cudaSuccess) return -1;
+	if (err1 != cudaSuccess || err2 != cudaSuccess ||
+		err3 != cudaSuccess ) return -1;
 	return 0;  //成功
 }
 
 //三改：上传 BVH 节点数据到 GPU 显存
-//nodes    - 主机端 BVH 节点数组指针（由 buildBVH 生成）
-//numNodes - 节点总数
-extern "C" 
-CUDA_API void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
+extern "C"
+CUDA_API void cudaUploadBVH(
+	const BVHNode* nodes,		//主机端 BVH 节点数组指针（由 buildBVH 生成）
+	int numNodes)				//节点总数
+{
 	if (g_dBVH) {
 		cudaFree(g_dBVH);
 		g_dBVH = nullptr;
@@ -711,8 +659,8 @@ CUDA_API void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
 
 	if (numNodes > 0 && nodes) {
 		size_t bytes = (size_t)numNodes * sizeof(BVHNode);
-		cudaError_t err = cudaMalloc(&g_dBVH, bytes);
-		if (err == cudaSuccess) {
+		cudaError_t err4 = cudaMalloc(&g_dBVH, bytes);
+		if (err4 == cudaSuccess) {
 			cudaMemcpy(g_dBVH, nodes, bytes, cudaMemcpyHostToDevice);
 		}
 		else {
@@ -722,40 +670,81 @@ CUDA_API void cudaUploadBVH(const BVHNode* nodes, int numNodes) {
 	}
 }
 
-//将三角形数据上传到GPU显存（可多次调用以重新上传）
-//参数：tris - 主机端三角形数组指针
-//      numTris - 三角形数量
-extern "C" 
-CUDA_API void cudaUploadTriangles(const GPUTriangle* tris, int numTris) {
+//将三角形数据上传到GPU显存
+extern "C"
+CUDA_API void cudaUploadTriangles(
+	const GPUTriangle* tris,	//主机端三角形数组指针
+	int numTris)				//三角形数量
+{
 	if (g_dTris) {
-		cudaFree(g_dTris);     //释放GPU显存
-		g_dTris = nullptr;     //重置指针
+		cudaFree(g_dTris);     
+		g_dTris = nullptr;     
+	}    
+	if (g_dTriCache) {
+		cudaFree(g_dTriCache);
+		g_dTriCache = nullptr;
 	}
-	g_numTris = numTris;       //更新三角形计数
 
-	//如果有新数据需要上传
+	g_numTris = numTris;
+	// 按 numTris 分配 TriCache
+	cudaError_t err5 = cudaMalloc(&g_dTriCache, (size_t)numTris * sizeof(TriCached));
+	if (err5 != cudaSuccess) {
+		g_dTriCache = nullptr;
+		g_numTris = 0;
+		return;  
+	}
+	// 按 numTris 分配 Tris
 	if (numTris > 0 && tris) {
-		size_t bytes = (size_t)numTris * sizeof(GPUTriangle);  //计算字节数
-		cudaError_t err = cudaMalloc(&g_dTris, bytes);         //分配GPU显存
-		if (err != cudaSuccess) {
-			//分配失败：重置状态
+		size_t bytes = (size_t)numTris * sizeof(GPUTriangle);
+		cudaError_t err6 = cudaMalloc(&g_dTris, bytes);
+		if (err6 != cudaSuccess) {
 			g_dTris = nullptr;
 			g_numTris = 0;
+			cudaFree(g_dTriCache);
+			g_dTriCache = nullptr;
 			return;
 		}
-		//将三角形数据从主机内存拷贝到设备显存
 		cudaMemcpy(g_dTris, tris, bytes, cudaMemcpyHostToDevice);
 	}
 }
 
 //渲染一帧：执行光栅化和光照计算
-//参数：params - 渲染参数（MVP矩阵、光源等）
-//      g_hFramebuf - 输出缓冲区指针（BGRA格式，至少 width*height*4 字节）
-extern "C" 
-CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) {
+extern "C"
+CUDA_API void cudaRender(
+	const RenderParams& params,		//渲染参数
+	unsigned int* g_hFramebuf)		//CPU端输出缓冲区指针
+{
 	//检查GPU缓冲区和输出指针是否有效
 	if (!g_dFramebuf || !g_dDepthbuf || !g_hFramebuf) return;
-	if (!g_dTris || !g_dTriCache || !g_dTiles || !g_dClippedTris) return;
+	if (!g_dTris || !g_dTriCache || !g_dTiles ) return;
+
+	int numTris = g_numTris;
+	//空场景特殊处理，只清屏
+	if (numTris == 0) {
+		dim3 block(16, 16);
+		dim3 grid((params.width + block.x - 1) / block.x,
+			(params.height + block.y - 1) / block.y);
+		clearKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf, params.width, params.height);
+		cudaDeviceSynchronize();
+		cudaMemcpy(g_hFramebuf, g_dFramebuf,
+			(size_t)params.width * params.height * sizeof(unsigned int),
+			cudaMemcpyDeviceToHost);
+		return;
+	}
+
+	//裁剪三角形缓冲区管理
+	int needed = numTris * 2 + 2;	// 每个原三角形最多产生2个裁剪三角形
+	if (needed > g_clippedTrisCapacity) {	// 容量不足，重新分配
+		if (g_dClippedTris) cudaFree(g_dClippedTris);
+		g_clippedTrisCapacity = (int)(needed * 1.2f);
+		cudaError_t err7 = cudaMalloc(&g_dClippedTris,(size_t)g_clippedTrisCapacity * sizeof(ClippedTri));
+		if (err7 != cudaSuccess) { 
+			g_dClippedTris = nullptr; 
+			g_clippedTrisCapacity = 0; 
+			return;					//分配失败，放弃本次渲染
+		}
+	}
+
 	//配置CUDA线程网格（每个线程块16×16线程）
 	dim3 block(16, 16);
 
@@ -767,12 +756,12 @@ CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) 
 	clearKernel << <grid, block >> > (g_dFramebuf, g_dDepthbuf, params.width, params.height);
 
 	//第二步：GPU预计算每个三角形的NDC坐标+屏幕包围盒
-	int triBlocks = (params.numTris + 255) / 256;
+	int triBlocks = (numTris + 255) / 256;
 	computeTriCacheKernel << <triBlocks, 256 >> > (
 		g_dTriCache,
 		g_dClippedTris,
 		g_dTris,
-		params.numTris,
+		numTris,
 		params);
 
 	//第三步：构建分块
@@ -782,10 +771,10 @@ CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) 
 	buildTileKernel << <tileGrid, dim3(16, 16) >> > (
 		g_dTiles,
 		g_dTriCache,
-		params.numTris,
+		numTris,
 		tilesX, tilesY,
 		params.width, params.height,
-		params.mvp,         //三改：传入 MVP 矩阵供 BVH 投影使用
+		params.mvp,         //三改:传入 MVP 矩阵供 BVH 投影使用
 		g_dBVH,				//三改:传入设备端 BVH 指针
 		g_numBVHNodes);		//三改:传入节点数量
 
@@ -806,7 +795,7 @@ CUDA_API void cudaRender(const RenderParams& params, unsigned int* g_hFramebuf) 
 }
 
 //释放所有GPU资源：在卸载DLL之前调用
-extern "C" 
+extern "C"
 CUDA_API void cudaShutdown(void)
 {
 	//释放帧缓冲区
@@ -838,6 +827,7 @@ CUDA_API void cudaShutdown(void)
 	if (g_dClippedTris) {
 		cudaFree(g_dClippedTris);
 		g_dClippedTris = nullptr;
+		g_clippedTrisCapacity = 0;  
 	}
 	//释放 BVH 节点
 	if (g_dBVH) {
@@ -845,5 +835,5 @@ CUDA_API void cudaShutdown(void)
 		g_dBVH = nullptr;
 	}
 	g_numBVHNodes = 0;
-	g_numTris = 0;  //重置三角形计数
+	g_numTris = 0;  
 }
