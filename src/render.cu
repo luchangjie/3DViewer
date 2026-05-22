@@ -629,10 +629,7 @@ CUDA_API int cudaInit(int width, int height, char* outName, int nameBufSize) {
 	//释放可能已存在的旧缓冲区
 	if (g_dFramebuf) cudaFree(g_dFramebuf);
 	if (g_dDepthbuf) cudaFree(g_dDepthbuf);
-	if (g_dTriCache) cudaFree(g_dTriCache);
 	if (g_dTiles) cudaFree(g_dTiles);
-	if (g_dClippedTris) cudaFree(g_dClippedTris);
-
 
 	//分配新的GPU帧缓冲区和深度缓冲区
 	cudaError_t err1 = cudaMalloc(&g_dFramebuf, sz * sizeof(unsigned int)); //帧缓冲（BGRA像素）
