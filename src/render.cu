@@ -237,7 +237,7 @@ __global__ void computeTriCacheKernel(
 	float keyDiff = fmaxf(N.dot(L), 0.f); //负数钳制为0（背面不接收光照）
 
 	//补光漫反射
-	Vec3 fillDir = { -0.4f, -0.3f, 0.6f };
+	Vec3 fillDir = { 0.4f, 0.3f, 0.6f };
 	float fillDiff = fmaxf(N.dot(fillDir.norm()), 0.f);
 
 	//半球环境光：朝上的面更亮，朝下的面更暗
@@ -247,7 +247,7 @@ __global__ void computeTriCacheKernel(
 	tc.baseR = fminf(1.f,
 		p.ambient.x * (0.8f + 0.2f * hemi) * baseR  //环境光
 		+ keyDiff * p.lightColor.x * baseR * 0.85f  //主光源漫反射
-		+ fillDiff * 0.35f * baseR                  //补光
+		+ fillDiff * 0.3f * baseR                  //补光
 	);
 	tc.baseG = fminf(1.f,
 		p.ambient.y * (0.8f + 0.2f * hemi) * baseG
@@ -257,7 +257,7 @@ __global__ void computeTriCacheKernel(
 	tc.baseB = fminf(1.f,
 		p.ambient.z * (0.8f + 0.2f * hemi) * baseB
 		+ keyDiff * p.lightColor.z * baseB * 0.85f
-		+ fillDiff * 0.4f * baseB
+		+ fillDiff * 0.3f * baseB
 	);
 
 	//第三步：近裁剪面裁剪
@@ -536,7 +536,7 @@ void rasterizeKernel(
 				tmp = nz0; nz0 = nz2; nz2 = tmp;
 			}
 
-			//计算重心坐标
+			//计算像素相对重心坐标
 			float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / ct.area;
 			float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / ct.area;
 			float w2 = 1.f - w0 - w1;
@@ -547,7 +547,7 @@ void rasterizeKernel(
 			//====线框模式：只渲染三角形边缘====
 			if (p.wireframe) {
 				float thresh = 0.025f; //线框宽度
-				if (w0 > thresh && w1 > thresh && w2 > thresh) continue;
+				if (w0 > thresh && w1 > thresh && w2 > thresh) continue;	
 			}
 
 			//深度测试：如果当前三角形比已渲染的更远，跳过

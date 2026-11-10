@@ -40,7 +40,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
                 int v;
                 std::istringstream tss(token);
                 tss >> v;
-                //obj索引转c++索引
+                //obj索引转c++索引，负数是倒数第几个
                 vi[cnt++] = (v > 0) ? v - 1 : (int)verts.size() + v;
             }
             //如果顶点数超过64个，发出警告（实际会被截断,而且一般不会出现）
@@ -63,7 +63,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
                 Vec3 ac = tri.v[2] - tri.v[0];
                 tri.normal = ab.cross(ac).norm();   //叉积并归一化得面法线
                 //分配颜色
-                const unsigned char c[3] = { 190,190,190 };
+                const unsigned char c[3] = { 180,180,180 };
                 tri.color[0] = c[0];   //R分量
                 tri.color[1] = c[1];   //G分量
                 tri.color[2] = c[2];   //B分量

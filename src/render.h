@@ -1,6 +1,6 @@
-#ifndef __CUDACC__
-# ifndef __host__
-#  define __host__
+#ifndef __CUDACC__  //不是CUDA
+# ifndef __host__   //正常编译器未定义__host__
+#  define __host__  //则定义为空
 # endif
 # ifndef __device__
 #  define __device__

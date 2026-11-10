@@ -183,9 +183,9 @@ static void renderFrame() {
     RenderParams rp;
     rp.mvp = proj * view * model;               //模型-视图-投影 矩阵：模型空间到裁剪空间
     rp.modelView = view * model;                //模型-视图矩阵：用于将法线变换到视图空间进行光照计算
-    rp.lightDir = view.mulDir(Vec3(-0.5f, -0.5f, -1.f).norm()).norm();//视图空间光照方向，指向光源（括号里是世界坐标）
-    rp.lightColor = { 0.5f, 0.5f, 0.5f };       //光源颜色
-    rp.ambient = { 0.4f, 0.4f, 0.4f };          //环境光颜色
+    rp.lightDir = view.mulDir(Vec3(-0.5f, -0.7f, -1.f).norm()).norm();//视图空间光照方向，指向光源（括号里是世界坐标）
+    rp.lightColor = { 0.45f, 0.45f, 0.45f };    //光源颜色
+    rp.ambient = { 0.35f, 0.35f, 0.35f };       //环境光颜色
     rp.width = g_winW;                          //帧缓冲宽度（像素）
     rp.height = g_winH;                         //帧缓冲高度（像素）
     rp.numTris = g_numTris;                     //三角形总数     
@@ -388,7 +388,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         //限制缩放范围
         if (g_zoom < 0.2f) g_zoom = 0.2f;       //最近距离
         if (g_zoom > 16.f) g_zoom = 16.f;       //最远距离
-        InvalidateRect(hwnd, nullptr, FALSE);   //请求重绘
+        InvalidateRect(hwnd, nullptr, FALSE);   //请求重绘，窗口，整个窗口区，不擦背景
         return 0;
     }
     case WM_PAINT: {                  //窗口绘制消息，响应重绘请求，一次处理积压的请求，节省资源

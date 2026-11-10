@@ -550,7 +550,7 @@ bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris) {
         int v1 = vertIdx[i * 3 + 0] + 1;
         int v2 = vertIdx[i * 3 + 1] + 1;
         int v3 = vertIdx[i * 3 + 2] + 1;
-        file << "f " << v1 << "//" << (i + 1)
+        file << "f " << v1 << "//" << (i + 1)   //顶点索引，，法线索引（面的法向量用作顶点的法向量）
             << " " << v2 << "//" << (i + 1)
             << " " << v3 << "//" << (i + 1) << "\n";
     }
