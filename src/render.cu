@@ -213,7 +213,7 @@ __global__ void computeTriCacheKernel(
 	}
 
 	//第二步：基础光照计算（与裁剪无关，提前计算）
-	Vec3 N = tri.normal;
+	Vec3 N = tri.normal;                     // 模型空间法线（保持模型空间，供后续高光使用）
 	//计算原始三角形的面积和面朝向
 	float area = edgeFunc(
 		cx[0] / cw[0], cy[0] / cw[0],
@@ -225,6 +225,10 @@ __global__ void computeTriCacheKernel(
 	tc.flipped = flipped;
 	tc.normal = N;
 
+	// 漫反射/补光/半球项需与“视图空间”光向点乘，因此把法线也转到视图空间。
+	// 修复：原先直接用模型空间法线点乘视图空间光向，导致旋转模型时整体明暗不变。
+	Vec3 Nv = p.modelView.mulDir(N).norm();
+
 	//基础颜色转换：0-255 → 0.0-1.0
 	float baseR = tri.color[0] / 255.f;
 	float baseG = tri.color[1] / 255.f;
@@ -234,20 +238,20 @@ __global__ void computeTriCacheKernel(
 
 	//主光源漫反射
 	Vec3 L = p.lightDir;
-	float keyDiff = fmaxf(N.dot(L), 0.f); //负数钳制为0（背面不接收光照）
+	float keyDiff = fmaxf(Nv.dot(L), 0.f); //负数钳制为0（背面不接收光照）
 
 	//补光漫反射
-	Vec3 fillDir = { -0.4f, -0.3f, 0.6f };
-	float fillDiff = fmaxf(N.dot(fillDir.norm()), 0.f);
+	Vec3 fillDir = { 0.4f, 0.3f, 0.6f };
+	float fillDiff = fmaxf(Nv.dot(fillDir.norm()), 0.f);
 
-	//半球环境光：朝上的面更亮，朝下的面更暗
-	float hemi = 0.7f + 0.3f * N.y;
+	//半球环境光：朝上的面更亮，朝下的面更暗（Nv.y 为视图空间上方分量）
+	float hemi = 0.7f + 0.3f * Nv.y;
 
 	//预计算基础色（高光除外，因为高光依赖视角/像素位置）
 	tc.baseR = fminf(1.f,
 		p.ambient.x * (0.8f + 0.2f * hemi) * baseR  //环境光
 		+ keyDiff * p.lightColor.x * baseR * 0.85f  //主光源漫反射
-		+ fillDiff * 0.35f * baseR                  //补光
+		+ fillDiff * 0.3f * baseR                  //补光
 	);
 	tc.baseG = fminf(1.f,
 		p.ambient.y * (0.8f + 0.2f * hemi) * baseG
@@ -257,7 +261,7 @@ __global__ void computeTriCacheKernel(
 	tc.baseB = fminf(1.f,
 		p.ambient.z * (0.8f + 0.2f * hemi) * baseB
 		+ keyDiff * p.lightColor.z * baseB * 0.85f
-		+ fillDiff * 0.4f * baseB
+		+ fillDiff * 0.3f * baseB
 	);
 
 	//第三步：近裁剪面裁剪
@@ -536,7 +540,7 @@ void rasterizeKernel(
 				tmp = nz0; nz0 = nz2; nz2 = tmp;
 			}
 
-			//计算重心坐标
+			//计算像素相对重心坐标
 			float w0 = edgeFunc(nx1, ny1, nx2, ny2, ndcX, ndcY) / ct.area;
 			float w1 = edgeFunc(nx2, ny2, nx0, ny0, ndcX, ndcY) / ct.area;
 			float w2 = 1.f - w0 - w1;
@@ -547,7 +551,7 @@ void rasterizeKernel(
 			//====线框模式：只渲染三角形边缘====
 			if (p.wireframe) {
 				float thresh = 0.025f; //线框宽度
-				if (w0 > thresh && w1 > thresh && w2 > thresh) continue;
+				if (w0 > thresh && w1 > thresh && w2 > thresh) continue;	
 			}
 
 			//深度测试：如果当前三角形比已渲染的更远，跳过

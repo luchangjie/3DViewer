@@ -362,3 +362,7 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /src/render.h
+
+# ---- 3DViewer 项目补充 ----
+# 示例模型（覆盖上面的 *.obj 规则，使 models/ 下的模型可被跟踪）
+!models/*.obj

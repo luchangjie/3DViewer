@@ -1,27 +1,27 @@
-#include "render.h"
-#include <algorithm>            // Èı¸Ä£ºÓÃÓÚ std::nth_element ¹¹½¨ BVH
-#include <vector>               // Èı¸Ä£ºBVH ½ÚµãÈİÆ÷
+ï»¿#include "render.h"
+#include <algorithm>            // ä¸‰æ”¹ï¼šç”¨äº std::nth_element æ„å»º BVH
+#include <vector>               // ä¸‰æ”¹ï¼šBVH èŠ‚ç‚¹å®¹å™¨
 #include <cfloat>
 
 //-------------------------------------------------------------------
-// Èı¸Ä£ºBVH ¹¹½¨¸¨Öú½á¹¹£º¼ÇÂ¼Ã¿¸öÈı½ÇĞÎµÄ AABB ÓëÖĞĞÄµã
+// ä¸‰æ”¹ï¼šBVH æ„å»ºè¾…åŠ©ç»“æ„ï¼šè®°å½•æ¯ä¸ªä¸‰è§’å½¢çš„ AABB ä¸ä¸­å¿ƒç‚¹
 struct BVHBuildTri {
-    int  origIdx;            // Ô­Ê¼Èı½ÇĞÎË÷Òı£¨ÖØÅÅÇ°£©
-    Vec3 center;             // °üÎ§ºĞÖĞĞÄ
-    Vec3 bmin, bmax;         // °üÎ§ºĞ×îĞ¡µã¡¢×î´óµã
+    int  origIdx;            // åŸå§‹ä¸‰è§’å½¢ç´¢å¼•ï¼ˆé‡æ’å‰ï¼‰
+    Vec3 center;             // åŒ…å›´ç›’ä¸­å¿ƒ
+    Vec3 bmin, bmax;         // åŒ…å›´ç›’æœ€å°ç‚¹ã€æœ€å¤§ç‚¹
 };
 
-// µİ¹é¹¹½¨ BVH£¬·µ»Ø½ÚµãÔÚ outNodes ÖĞµÄË÷Òı
+// é€’å½’æ„å»º BVHï¼Œè¿”å›èŠ‚ç‚¹åœ¨ outNodes ä¸­çš„ç´¢å¼•
 static int buildBVHRecursive(
-    std::vector<BVHBuildTri>& buildTris,    //ÒªÖØÅÅµÄÈı½ÇĞÎÊı×é
-    int start, int end,                     //ÄÄ¸öÇø¼äµÄ
-    std::vector<BVHNode>& outNodes)         //ÖØÅÅºóµÄBVH½ÚµãÊı×é
+    std::vector<BVHBuildTri>& buildTris,    //è¦é‡æ’çš„ä¸‰è§’å½¢æ•°ç»„
+    int start, int end,                     //å“ªä¸ªåŒºé—´çš„
+    std::vector<BVHNode>& outNodes)         //é‡æ’åçš„BVHèŠ‚ç‚¹æ•°ç»„
 {
-    int nodeIdx = (int)outNodes.size();     // ¼ÇÂ¼µ±Ç°½ÚµãÔÚÊı×éÖĞµÄÎ»ÖÃ
-    outNodes.emplace_back();                // ÔÚÊı×éÄ©Î²ĞÂÔöÒ»¸ö¿Õ½Úµã
-    // ±ØĞëÍ¨¹ıoutNodes[nodeIdx]·ÃÎÊ£¬²»ÄÜÓÃÒıÓÃ»º´æ£¬ÒòÎª»º´æ¿ÉÄÜÓÉÓÚµİ¹éÀ©Èİ¶øÒıÓÃÊ§Ğ§
+    int nodeIdx = (int)outNodes.size();     // è®°å½•å½“å‰èŠ‚ç‚¹åœ¨æ•°ç»„ä¸­çš„ä½ç½®
+    outNodes.emplace_back();                // åœ¨æ•°ç»„æœ«å°¾æ–°å¢ä¸€ä¸ªç©ºèŠ‚ç‚¹
+    // å¿…é¡»é€šè¿‡outNodes[nodeIdx]è®¿é—®ï¼Œä¸èƒ½ç”¨å¼•ç”¨ç¼“å­˜ï¼Œå› ä¸ºç¼“å­˜å¯èƒ½ç”±äºé€’å½’æ‰©å®¹è€Œå¼•ç”¨å¤±æ•ˆ
 
-    // ¼ÆËãµ±Ç°Çø¼ä [start, end) ÄÚËùÓĞÈı½ÇĞÎµÄÕûÌå°üÎ§ºĞ
+    // è®¡ç®—å½“å‰åŒºé—´ [start, end) å†…æ‰€æœ‰ä¸‰è§’å½¢çš„æ•´ä½“åŒ…å›´ç›’
     Vec3 lo(FLT_MAX, FLT_MAX, FLT_MAX);
     Vec3 hi(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     for (int i = start; i < end; ++i) {
@@ -32,7 +32,7 @@ static int buildBVHRecursive(
         hi.y = fmaxf(hi.y, buildTris[i].bmax.y);
         hi.z = fmaxf(hi.z, buildTris[i].bmax.z);
     }
-    // ¸Ã½ÚµãµÄ°üÎ§ºĞ
+    // è¯¥èŠ‚ç‚¹çš„åŒ…å›´ç›’
     outNodes[nodeIdx].minX = lo.x;
     outNodes[nodeIdx].minY = lo.y;
     outNodes[nodeIdx].minZ = lo.z;
@@ -40,12 +40,12 @@ static int buildBVHRecursive(
     outNodes[nodeIdx].maxY = hi.y;
     outNodes[nodeIdx].maxZ = hi.z;
 
-    //Ò»¸öÒ¶×Ó×î¶à°üº¬¼¸¸öÈı½ÇĞÎ
+    //ä¸€ä¸ªå¶å­æœ€å¤šåŒ…å«å‡ ä¸ªä¸‰è§’å½¢
     int count = end - start;
     const int LEAF_MAX = 8;
 
     if (count <= LEAF_MAX) {
-        // Ò¶×Ó½Úµã
+        // å¶å­èŠ‚ç‚¹
         outNodes[nodeIdx].left = -1;
         outNodes[nodeIdx].right = -1;
         outNodes[nodeIdx].triStart = start;
@@ -53,25 +53,25 @@ static int buildBVHRecursive(
         return nodeIdx;
     }
 
-    // ÄÚ²¿½Úµã£ºÑ¡×î³¤Öá·Ö¸î
+    // å†…éƒ¨èŠ‚ç‚¹ï¼šé€‰æœ€é•¿è½´åˆ†å‰²
     Vec3 extent = hi - lo;
-    int axis = 0;//Ä¬ÈÏxÖá
+    int axis = 0;//é»˜è®¤xè½´
     if (extent.y > extent.x) axis = 1;
     if (extent.z > (axis == 0 ? extent.x : extent.y)) axis = 2;
 
-    int mid = start + count / 2;//ÖĞµã
-    std::nth_element(   //¸úÖĞµã±È½Ï·Ö³ÉÁ½¶Ñ
-        buildTris.begin() + start,  //ÆğÊ¼
-        buildTris.begin() + mid,    //ÖĞµã
-        buildTris.begin() + end,    //×îºó
-        [axis](const BVHBuildTri& a, const BVHBuildTri& b) {//±È½Ï·½·¨
-            float av = (axis == 0) ? a.center.x : (axis == 1) ? a.center.y : a.center.z;// AÔÚ×î³¤ÖáÉÏµÄ×ø±ê
-            float bv = (axis == 0) ? b.center.x : (axis == 1) ? b.center.y : b.center.z;// BÔÚ×î³¤ÖáÉÏµÄ×ø±ê
-            return av < bv;                                                             // °´×ø±ê´ÓĞ¡µ½´óÅÅĞò
+    int mid = start + count / 2;//ä¸­ç‚¹
+    std::nth_element(   //è·Ÿä¸­ç‚¹æ¯”è¾ƒåˆ†æˆä¸¤å †
+        buildTris.begin() + start,  //èµ·å§‹
+        buildTris.begin() + mid,    //ä¸­ç‚¹
+        buildTris.begin() + end,    //æœ€å
+        [axis](const BVHBuildTri& a, const BVHBuildTri& b) {//æ¯”è¾ƒæ–¹æ³•
+            float av = (axis == 0) ? a.center.x : (axis == 1) ? a.center.y : a.center.z;// Aåœ¨æœ€é•¿è½´ä¸Šçš„åæ ‡
+            float bv = (axis == 0) ? b.center.x : (axis == 1) ? b.center.y : b.center.z;// Båœ¨æœ€é•¿è½´ä¸Šçš„åæ ‡
+            return av < bv;                                                             // æŒ‰åæ ‡ä»å°åˆ°å¤§æ’åº
         }
     );
 
-    // µİ¹é£¬¼ÇÂ¼
+    // é€’å½’ï¼Œè®°å½•
     int leftIdx = buildBVHRecursive(buildTris, start, mid, outNodes);
     int rightIdx = buildBVHRecursive(buildTris, mid, end, outNodes);
 
@@ -82,13 +82,13 @@ static int buildBVHRecursive(
     return nodeIdx;
 }
 
-// ÎªÈı½ÇĞÎÊı×é¹¹½¨BVH£¬²¢Ô­µØÖØÅÅÈı½ÇĞÎË³Ğò
+// ä¸ºä¸‰è§’å½¢æ•°ç»„æ„å»ºBVHï¼Œå¹¶åŸåœ°é‡æ’ä¸‰è§’å½¢é¡ºåº
 void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes)
 {
     outNodes.clear();
     if (numTris <= 0) return;
 
-    // 1. ÏÈÎªÃ¿¸öÈı½ÇĞÎ¼ÆËãAABBÓëÖĞĞÄ
+    // 1. å…ˆä¸ºæ¯ä¸ªä¸‰è§’å½¢è®¡ç®—AABBä¸ä¸­å¿ƒ
     std::vector<BVHBuildTri> buildTris(numTris);
     for (int i = 0; i < numTris; ++i) {
         const GPUTriangle& tri = tris[i];
@@ -104,10 +104,10 @@ void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes)
         buildTris[i].center = (lo + hi) * 0.5f;
     }
 
-    // 2. µİ¹é¹¹½¨BVH£¨½ÚµãĞ´ÈëoutNodes£¬Í¬Ê±È·¶¨ÖØÅÅË³Ğò£©
+    // 2. é€’å½’æ„å»ºBVHï¼ˆèŠ‚ç‚¹å†™å…¥outNodesï¼ŒåŒæ—¶ç¡®å®šé‡æ’é¡ºåºï¼‰
     buildBVHRecursive(buildTris, 0, numTris, outNodes);
 
-    // 3. °´buildTrisµÄË³ĞòÖØÅÅÔ­Ê¼Èı½ÇĞÎÊı×étris
+    // 3. æŒ‰buildTrisçš„é¡ºåºé‡æ’åŸå§‹ä¸‰è§’å½¢æ•°ç»„tris
     std::vector<GPUTriangle> temp(numTris);
     for (int i = 0; i < numTris; ++i) {
         temp[i] = tris[buildTris[i].origIdx];

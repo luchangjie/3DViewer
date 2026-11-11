@@ -1,54 +1,54 @@
-#include "render.h"
+ï»¿#include "render.h"
 #include <fstream>
-#include <sstream>      //×Ö·û´®Á÷
+#include <sstream>      //å­—ç¬¦ä¸²æµ
 #include <iostream>
 #include <vector>
 #include <algorithm>
 #include <cmath>
-#include <unordered_map>//hash±í£¬µ¼³öÊ±È¥ÖØÓÃ
+#include <unordered_map>//hashè¡¨ï¼Œå¯¼å‡ºæ—¶å»é‡ç”¨
 
-// Ğ¡Á¢·½ÌåµÄ8¸ö¶¥µãµÄ3¸ö×ø±ê£¨ÖĞĞÄÔÚÔ­µã£©
+// å°ç«‹æ–¹ä½“çš„8ä¸ªé¡¶ç‚¹çš„3ä¸ªåæ ‡ï¼ˆä¸­å¿ƒåœ¨åŸç‚¹ï¼‰
 static const float cubeVerts[8][3] = {
-    {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f}, // 0,1: µ×Ãæºó
-    { 0.5f,  0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f}, // 2,3: ¶¥ÃæÇ°
-    {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f}, // 4,5: µ×Ãæºó
-    { 0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f}  // 6,7: ¶¥ÃæÇ°
+    {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f}, // 0,1: åº•é¢å
+    { 0.5f,  0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f}, // 2,3: é¡¶é¢å‰
+    {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f}, // 4,5: åº•é¢å
+    { 0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f}  // 6,7: é¡¶é¢å‰
 };
 
-//Ã¿¸öÃæµÄÈı¸ö¶¥µã·Ö±ğ¶ÔÓ¦¶¥µã¼¸
+//æ¯ä¸ªé¢çš„ä¸‰ä¸ªé¡¶ç‚¹åˆ†åˆ«å¯¹åº”é¡¶ç‚¹å‡ 
 static const int cubeFaces[12][3] = {
-    // Ç°Ãæ (+Z) - ³¯ÏòÆÁÄ»Íâ
+    // å‰é¢ (+Z) - æœå‘å±å¹•å¤–
     {4, 6, 5}, {4, 7, 6},
-    // ºóÃæ (-Z) - ³¯ÏòÆÁÄ»ÄÚ
+    // åé¢ (-Z) - æœå‘å±å¹•å†…
     {0, 1, 2}, {0, 2, 3},
-    // ÓÒÃæ (+X)
+    // å³é¢ (+X)
     {1, 6, 2}, {1, 5, 6},
-    // ×óÃæ (-X)
+    // å·¦é¢ (-X)
     {0, 3, 7}, {0, 7, 4},
-    // ÉÏÃæ (+Y)
+    // ä¸Šé¢ (+Y)
     {3, 6, 7}, {3, 2, 6},
-    // ÏÂÃæ (-Y)
+    // ä¸‹é¢ (-Y)
     {0, 4, 5}, {0, 5, 1}
 };
 
-// Ã¿¸öÃæµÄÏàÁÚÌåËØÆ«ÒÆ£¨ÓÃÓÚÄÚ²¿ÃæÌŞ³ı£©
+// æ¯ä¸ªé¢çš„ç›¸é‚»ä½“ç´ åç§»ï¼ˆç”¨äºå†…éƒ¨é¢å‰”é™¤ï¼‰
 static const int faceNeighbors[6][3] = {
-    {0, 0, 1},   // Ç°Ãæ (+Z)
-    {0, 0, -1},  // ºóÃæ (-Z)
-    {1, 0, 0},   // ÓÒÃæ (+X)
-    {-1, 0, 0},  // ×óÃæ (-X)
-    {0, 1, 0},   // ÉÏÃæ (+Y)
-    {0, -1, 0}   // ÏÂÃæ (-Y)
+    {0, 0, 1},   // å‰é¢ (+Z)
+    {0, 0, -1},  // åé¢ (-Z)
+    {1, 0, 0},   // å³é¢ (+X)
+    {-1, 0, 0},  // å·¦é¢ (-X)
+    {0, 1, 0},   // ä¸Šé¢ (+Y)
+    {0, -1, 0}   // ä¸‹é¢ (-Y)
 };
 
-// Ê¹ÓÃÎ»Í¼´úÌæunordered_set
+// ä½¿ç”¨ä½å›¾ä»£æ›¿unordered_set
 class VoxelBitmap {
 private:
     unsigned char* data;
-    int sizeX, sizeY, sizeZ;    //xyz·½ÏòÌåËØÊı£¨1Î»£©
+    int sizeX, sizeY, sizeZ;    //xyzæ–¹å‘ä½“ç´ æ•°ï¼ˆ1ä½ï¼‰
     int strideY, strideZ;
 
-    //»ñÈ¡¸ÃÊıÖµb¶ş½øÖÆ±íÊ¾Àï1µÄÊıÁ¿
+    //è·å–è¯¥æ•°å€¼bäºŒè¿›åˆ¶è¡¨ç¤ºé‡Œ1çš„æ•°é‡
     static inline int popcount(unsigned char b) {
         static const unsigned char table[] = {
             0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,
@@ -72,42 +72,42 @@ private:
     }
 
 public:
-    //ÕûºĞ£¬1´ú±íÓĞÌåËØ£¬0´ú±íÎŞÌåËØ
+    //æ•´ç›’ï¼Œ1ä»£è¡¨æœ‰ä½“ç´ ï¼Œ0ä»£è¡¨æ— ä½“ç´ 
     VoxelBitmap(int x, int y, int z) : sizeX(x), sizeY(y), sizeZ(z) {
-        strideY = (x + 7) / 8;  //Ã¿ĞĞÓĞ¶àÉÙint
-        strideZ = strideY * y;  //Ã¿²ãÓĞ¶àÉÙint
-        size_t totalBytes = (size_t)strideZ * z; //ÕûºĞÓĞÓĞ¶àÉÙint
-        data = new unsigned char[totalBytes]();  //È«³õÊ¼»¯Îª0
+        strideY = (x + 7) / 8;  //æ¯è¡Œæœ‰å¤šå°‘int
+        strideZ = strideY * y;  //æ¯å±‚æœ‰å¤šå°‘int
+        size_t totalBytes = (size_t)strideZ * z; //æ•´ç›’æœ‰æœ‰å¤šå°‘int
+        data = new unsigned char[totalBytes]();  //å…¨åˆå§‹åŒ–ä¸º0
     }
 
     ~VoxelBitmap() {
         delete[] data;
     }
 
-    //±ê¼ÇË÷Òıidx´¦Îª¡°ÓĞ¡±ÌåËØ
+    //æ ‡è®°ç´¢å¼•idxå¤„ä¸ºâ€œæœ‰â€ä½“ç´ 
     void set(int x, int y, int z) {
         size_t idx = (size_t)z * strideZ + (size_t)y * strideY + x / 8;
         data[idx] |= 1 << (x % 8);
     }
-    //²éÑ¯Ë÷Òıidx´¦ÓĞÎŞÌåËØ
+    //æŸ¥è¯¢ç´¢å¼•idxå¤„æœ‰æ— ä½“ç´ 
     bool get(int x, int y, int z) const {
         if (x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ)
             return false;
         size_t idx = (size_t)z * strideZ + (size_t)y * strideY + x / 8;
         return (data[idx] & (1 << (x % 8))) != 0;
     }
-    //Í³¼ÆÌåËØÊı
+    //ç»Ÿè®¡ä½“ç´ æ•°
     int count() const {
         int cnt = 0;
         size_t totalBytes = (size_t)strideZ * sizeZ;
         for (size_t i = 0; i < totalBytes; ++i) {
-            cnt += popcount(data[i]);//¾ÍÊÇËùÓĞ1µÄ¸öÊı¼ÓÆğÀ´
+            cnt += popcount(data[i]);//å°±æ˜¯æ‰€æœ‰1çš„ä¸ªæ•°åŠ èµ·æ¥
         }
         return cnt;
     }
 };
 
-// ´ÖÂÔµÄÈı½ÇĞÎ-AABB Åö×²¼ì²â
+// ç²—ç•¥çš„ä¸‰è§’å½¢-AABB ç¢°æ’æ£€æµ‹
 static bool triangleAABBIntersect(const GPUTriangle& tri,
     float minX, float minY, float minZ,
     float maxX, float maxY, float maxZ)
@@ -127,17 +127,17 @@ static bool triangleAABBIntersect(const GPUTriangle& tri,
     return true;
 }
 
-// ¾«È·µÄÈı½ÇĞÎ-ÌåËØÏà½»¼ì²â£¨·ÖÀëÖá¶¨Àí£©cÎªcenter
+// ç²¾ç¡®çš„ä¸‰è§’å½¢-ä½“ç´ ç›¸äº¤æ£€æµ‹ï¼ˆåˆ†ç¦»è½´å®šç†ï¼‰cä¸ºcenter
 static bool triangleVoxelIntersect(const GPUTriangle& tri,
     float cx, float cy, float cz, float halfSize)
 {
-    // ½«Èı½ÇĞÎ¶¥µã×ª»»µ½ÌåËØ¾Ö²¿×ø±êÏµ
+    // å°†ä¸‰è§’å½¢é¡¶ç‚¹è½¬æ¢åˆ°ä½“ç´ å±€éƒ¨åæ ‡ç³»
     Vec3 v0 = tri.v[0] - Vec3(cx, cy, cz);
     Vec3 v1 = tri.v[1] - Vec3(cx, cy, cz);
     Vec3 v2 = tri.v[2] - Vec3(cx, cy, cz);
 
-    // ¿ìËÙAABB²âÊÔ£¨ÏÈ¹ıÂËµôÃ÷ÏÔ²»Ïà½»µÄÇé¿ö£©
-    const float EPS = 1e-4f; // ĞŞÕı¸¡µã¾«¶ÈÎó²î
+    // å¿«é€ŸAABBæµ‹è¯•ï¼ˆå…ˆè¿‡æ»¤æ‰æ˜æ˜¾ä¸ç›¸äº¤çš„æƒ…å†µï¼‰
+    const float EPS = 1e-4f; // ä¿®æ­£æµ®ç‚¹ç²¾åº¦è¯¯å·®
     float minX = fminf(v0.x, fminf(v1.x, v2.x));
     float maxX = fmaxf(v0.x, fmaxf(v1.x, v2.x));
     if (maxX < -halfSize - EPS || minX > halfSize + EPS) return false;
@@ -150,44 +150,44 @@ static bool triangleVoxelIntersect(const GPUTriangle& tri,
     float maxZ = fmaxf(v0.z, fmaxf(v1.z, v2.z));
     if (maxZ < -halfSize - EPS || minZ > halfSize + EPS) return false;
 
-    // Èı½ÇĞÎ±ß
+    // ä¸‰è§’å½¢è¾¹
     Vec3 e0 = v1 - v0;
     Vec3 e1 = v2 - v1;
     Vec3 e2 = v0 - v2;
 
-    // ÌåËØµÄÈı¸öÖá
+    // ä½“ç´ çš„ä¸‰ä¸ªè½´
     Vec3 a0(1, 0, 0);
     Vec3 a1(0, 1, 0);
     Vec3 a2(0, 0, 1);
 
-    // ²âÊÔ1£ºÈı½ÇĞÎ±ß ¡Á ÌåËØÖá£¨¹²9¸ö£©
+    // æµ‹è¯•1ï¼šä¸‰è§’å½¢è¾¹ Ã— ä½“ç´ è½´ï¼ˆå…±9ä¸ªï¼‰
     Vec3 axes[] = {
         a0.cross(e0), a0.cross(e1), a0.cross(e2),
         a1.cross(e0), a1.cross(e1), a1.cross(e2),
         a2.cross(e0), a2.cross(e1), a2.cross(e2)
     };
 
-    // ²âÊÔËùÓĞ·ÖÀëÖá
+    // æµ‹è¯•æ‰€æœ‰åˆ†ç¦»è½´
     for (int i = 0; i < 9; ++i) {
         Vec3 axis = axes[i];
-        if (axis.lenSq() < 1e-6f) continue; // Ìø¹ıÁãÏòÁ¿
+        if (axis.lenSq() < 1e-6f) continue; // è·³è¿‡é›¶å‘é‡
         axis = axis.norm();
 
         float p0 = v0.dot(axis);
         float p1 = v1.dot(axis);
         float p2 = v2.dot(axis);
-        //Èı½ÇĞÎÍ¶Ó°·¶Î§
+        //ä¸‰è§’å½¢æŠ•å½±èŒƒå›´
         float triMin = fminf(p0, fminf(p1, p2));
         float triMax = fmaxf(p0, fmaxf(p1, p2));
-        //AABBÍ¶Ó°µ½¸ÃÖáµ¥·½Ïò
+        //AABBæŠ•å½±åˆ°è¯¥è½´å•æ–¹å‘
         float boxProj = halfSize * (fabsf(a0.dot(axis)) + fabsf(a1.dot(axis)) + fabsf(a2.dot(axis)));
 
         if (triMax < -boxProj - 1e-5f || triMin > boxProj + 1e-5f) {
-            return false; // ·ÖÀëÖá´æÔÚ£¬²»Ïà½»
+            return false; // åˆ†ç¦»è½´å­˜åœ¨ï¼Œä¸ç›¸äº¤
         }
     }
 
-    // ²âÊÔ2£ºÈı½ÇĞÎ·¨ÏßÖá
+    // æµ‹è¯•2ï¼šä¸‰è§’å½¢æ³•çº¿è½´
     Vec3 normal = e0.cross(e1).norm();
     float p0 = v0.dot(normal);
     float p1 = v1.dot(normal);
@@ -200,18 +200,18 @@ static bool triangleVoxelIntersect(const GPUTriangle& tri,
         return false;
     }
 
-    // ËùÓĞÖá¶¼Í¨¹ı£¬Ïà½»
+    // æ‰€æœ‰è½´éƒ½é€šè¿‡ï¼Œç›¸äº¤
     return true;
 }
 
 int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
-    // µÚÒ»²½£º½âÎö OBJ ÎÄ¼ş
+    // ç¬¬ä¸€æ­¥ï¼šè§£æ OBJ æ–‡ä»¶
     std::vector<Vec3> verts;
     std::vector<GPUTriangle> tris;
 
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[VOXEL] ÎŞ·¨´ò¿ªÎÄ¼ş: " << path << std::endl;
+        std::cerr << "[VOXEL] æ— æ³•æ‰“å¼€æ–‡ä»¶: " << path << std::endl;
         triangles = nullptr;
         return 0;
     }
@@ -225,21 +225,21 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
                 verts.push_back({ x, y, z });
         }
         else if (line[0] == 'f' && line[1] == ' ') {
-            int vi[64], cnt = 0;                    //×î´ó64±ßĞÎ£¬¼ÆÊı
+            int vi[64], cnt = 0;                    //æœ€å¤§64è¾¹å½¢ï¼Œè®¡æ•°
             std::istringstream iss(line.substr(2));
             std::string token;
-            while (iss >> token && cnt < 64) {      //Ã¿¿Õ¸ñÇĞÒ»token
+            while (iss >> token && cnt < 64) {      //æ¯ç©ºæ ¼åˆ‡ä¸€token
                 int v;
                 std::istringstream tss(token);
-                tss >> v;                           //ÎÄ±¾×ªint£¨obj¶¥µãË÷Òı´Ó1¿ªÊ¼£©
-                if (v > 0) vi[cnt++] = v - 1;       //×ªÎª´Ó0¿ªÊ¼µÄË÷Òı
+                tss >> v;                           //æ–‡æœ¬è½¬intï¼ˆobjé¡¶ç‚¹ç´¢å¼•ä»1å¼€å§‹ï¼‰
+                if (v > 0) vi[cnt++] = v - 1;       //è½¬ä¸ºä»0å¼€å§‹çš„ç´¢å¼•
             }
             for (int i = 1; i + 1 < cnt; ++i) {
-                //Ìø¹ıÔ½½çµÄË÷Òı
+                //è·³è¿‡è¶Šç•Œçš„ç´¢å¼•
                 if (vi[0] < 0 || vi[0] >= (int)verts.size()) continue;
                 if (vi[i] < 0 || vi[i] >= (int)verts.size()) continue;
                 if (vi[i + 1] < 0 || vi[i + 1] >= (int)verts.size()) continue;
-                //ÒÔµÚ0¸ö¶¥µãÎªÉÈĞÄ£¬ÇĞ¶à±ßĞÎÎªÈı½ÇĞÎ
+                //ä»¥ç¬¬0ä¸ªé¡¶ç‚¹ä¸ºæ‰‡å¿ƒï¼Œåˆ‡å¤šè¾¹å½¢ä¸ºä¸‰è§’å½¢
                 GPUTriangle tri;
                 tri.v[0] = verts[vi[0]];
                 tri.v[1] = verts[vi[i]];
@@ -251,12 +251,12 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
     file.close();
 
     if (tris.empty()) {
-        std::cerr << "[VOXEL]Î´·¢ÏÖÈı½ÇĞÎÔÚ: " << path << std::endl;
+        std::cerr << "[VOXEL]æœªå‘ç°ä¸‰è§’å½¢åœ¨: " << path << std::endl;
         triangles = nullptr;
         return 0;
     }
 
-    // µÚ¶ş²½£º¼ÆËãÄ£ĞÍ°üÎ§ºĞ
+    // ç¬¬äºŒæ­¥ï¼šè®¡ç®—æ¨¡å‹åŒ…å›´ç›’
     Vec3 lo(FLT_MAX, FLT_MAX, FLT_MAX);
     Vec3 hi(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     for (const auto& tri : tris) {
@@ -270,83 +270,83 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
         }
     }
 
-    // µÚÈı²½£ºÌåËØ²ÎÊı
-    extern int g_voxelResolution;               // ÉùÃ÷Íâ²¿È«¾Ö±äÁ¿£¨ÔÚmain.cpp£©
+    // ç¬¬ä¸‰æ­¥ï¼šä½“ç´ å‚æ•°
+    extern int g_voxelResolution;               // å£°æ˜å¤–éƒ¨å…¨å±€å˜é‡ï¼ˆåœ¨main.cppï¼‰
     const int resolution = g_voxelResolution;
 
-    float voxelSize = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z }) / resolution; //Ñ¡×î³¤µÄ±ß¼ÆËãÌåËØ±ß³¤
+    float voxelSize = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z }) / resolution; //é€‰æœ€é•¿çš„è¾¹è®¡ç®—ä½“ç´ è¾¹é•¿
 
-    // µÚËÄ²½£º¹¹½¨¿Õ¼ä¹şÏ£Íø¸ñ
-    // Íø¸ñ·Ö±æÂÊ¸ù¾İÌåËØ·Ö±æÂÊ×Ô¶¯µ÷Õû£¬Ã¿¸öÍø¸ñµ¥Ôª¸²¸Ç8x8x8¸öÌåËØ
+    // ç¬¬å››æ­¥ï¼šæ„å»ºç©ºé—´å“ˆå¸Œç½‘æ ¼
+    // ç½‘æ ¼åˆ†è¾¨ç‡æ ¹æ®ä½“ç´ åˆ†è¾¨ç‡è‡ªåŠ¨è°ƒæ•´ï¼Œæ¯ä¸ªç½‘æ ¼å•å…ƒè¦†ç›–8x8x8ä¸ªä½“ç´ 
     int GRID_RES = resolution / 8;
-    GRID_RES = std::min(64, std::max(4, GRID_RES)); // ÏŞÖÆÔÚ4-64Ö®¼ä
+    GRID_RES = std::min(64, std::max(4, GRID_RES)); // é™åˆ¶åœ¨4-64ä¹‹é—´
 
-    float gridStep = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z }) / GRID_RES;    //Ñ¡×î³¤µÄÖá¼ÆËã´óÁ¢·½Ìå±ß³¤
+    float gridStep = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z }) / GRID_RES;    //é€‰æœ€é•¿çš„è½´è®¡ç®—å¤§ç«‹æ–¹ä½“è¾¹é•¿
 
-    std::vector<std::vector<int>> grid(GRID_RES * GRID_RES * GRID_RES);                 //´´½¨Íø¸ñ£¬Ã¿¸ñ´æÈı½ÇĞÎË÷ÒıÊı×é
+    std::vector<std::vector<int>> grid(GRID_RES * GRID_RES * GRID_RES);                 //åˆ›å»ºç½‘æ ¼ï¼Œæ¯æ ¼å­˜ä¸‰è§’å½¢ç´¢å¼•æ•°ç»„
 
     for (int t = 0; t < (int)tris.size(); ++t) {
         const GPUTriangle& tri = tris[t];
-        //Èı½ÇĞÎ°üÎ§ºĞ
+        //ä¸‰è§’å½¢åŒ…å›´ç›’
         float tMinX = fminf(tri.v[0].x, fminf(tri.v[1].x, tri.v[2].x));
         float tMaxX = fmaxf(tri.v[0].x, fmaxf(tri.v[1].x, tri.v[2].x));
         float tMinY = fminf(tri.v[0].y, fminf(tri.v[1].y, tri.v[2].y));
         float tMaxY = fmaxf(tri.v[0].y, fmaxf(tri.v[1].y, tri.v[2].y));
         float tMinZ = fminf(tri.v[0].z, fminf(tri.v[1].z, tri.v[2].z));
         float tMaxZ = fmaxf(tri.v[0].z, fmaxf(tri.v[1].z, tri.v[2].z));
-        //Èı½ÇĞÎµÄµ¥ÖáÍø¸ñË÷Òı£¨ÔÚµÚ¼¸¸ö¸ñ×Ó£©
+        //ä¸‰è§’å½¢çš„å•è½´ç½‘æ ¼ç´¢å¼•ï¼ˆåœ¨ç¬¬å‡ ä¸ªæ ¼å­ï¼‰
         int gxMin = std::max(0, std::min(GRID_RES - 1, (int)((tMinX - lo.x) / gridStep)));
         int gxMax = std::max(0, std::min(GRID_RES - 1, (int)((tMaxX - lo.x) / gridStep)));
         int gyMin = std::max(0, std::min(GRID_RES - 1, (int)((tMinY - lo.y) / gridStep)));
         int gyMax = std::max(0, std::min(GRID_RES - 1, (int)((tMaxY - lo.y) / gridStep)));
         int gzMin = std::max(0, std::min(GRID_RES - 1, (int)((tMinZ - lo.z) / gridStep)));
         int gzMax = std::max(0, std::min(GRID_RES - 1, (int)((tMaxZ - lo.z) / gridStep)));
-        //Èı½ÇĞÎÔÚÄÄĞ©¸ñ×Ó£¬Ìí¼ÓÆäË÷Òıµ½ÏàÓ¦¸ñ×ÓµÄintÊı×éÀï
+        //ä¸‰è§’å½¢åœ¨å“ªäº›æ ¼å­ï¼Œæ·»åŠ å…¶ç´¢å¼•åˆ°ç›¸åº”æ ¼å­çš„intæ•°ç»„é‡Œ
         for (int gz = gzMin; gz <= gzMax; ++gz)
             for (int gy = gyMin; gy <= gyMax; ++gy)
                 for (int gx = gxMin; gx <= gxMax; ++gx)
                     grid[(gz * GRID_RES + gy) * GRID_RES + gx].push_back(t);
     }
-    //É¾È¥¿ÉÄÜÖØ¸´µÄ£¨cellÊÇgrid[i],intÊı×é£©
+    //åˆ å»å¯èƒ½é‡å¤çš„ï¼ˆcellæ˜¯grid[i],intæ•°ç»„ï¼‰
     for (auto& cell : grid) {
         std::sort(cell.begin(), cell.end());
         cell.erase(std::unique(cell.begin(), cell.end()), cell.end());
     }
 
-    std::cout << "[VOXEL] Íø¸ñÒÑ½¨Ôì: " << GRID_RES * GRID_RES * GRID_RES
-        << " ¸öÍø¸ñµ¥Ôª£¬Æ½¾ùÃ¿µ¥Ôª " << (float)tris.size() / (GRID_RES * GRID_RES * GRID_RES)
-        << " ¸öÈı½ÇĞÎ" << std::endl;
+    std::cout << "[VOXEL] ç½‘æ ¼å·²å»ºé€ : " << GRID_RES * GRID_RES * GRID_RES
+        << " ä¸ªç½‘æ ¼å•å…ƒï¼Œå¹³å‡æ¯å•å…ƒ " << (float)tris.size() / (GRID_RES * GRID_RES * GRID_RES)
+        << " ä¸ªä¸‰è§’å½¢" << std::endl;
 
-    // µÚÎå²½£ºOpenMP¶àÏß³Ì±éÀúÌåËØ
+    // ç¬¬äº”æ­¥ï¼šOpenMPå¤šçº¿ç¨‹éå†ä½“ç´ 
     VoxelBitmap voxelBitmap(resolution, resolution, resolution);
 
-    std::cout << "[VOXEL] ¿ªÊ¼ÌåËØ»¯£¬·Ö±æÂÊ: " << resolution << "x" << resolution << "x" << resolution
-        << "£¬×Ü¹²ÓĞ " << (size_t)resolution * (size_t)resolution * (size_t)resolution << " ¸öÌåËØ" << std::endl;
+    std::cout << "[VOXEL] å¼€å§‹ä½“ç´ åŒ–ï¼Œåˆ†è¾¨ç‡: " << resolution << "x" << resolution << "x" << resolution
+        << "ï¼Œæ€»å…±æœ‰ " << (size_t)resolution * (size_t)resolution * (size_t)resolution << " ä¸ªä½“ç´ " << std::endl;
 
-    // OpenMP²¢ĞĞ´¦ÀíXÖá£¨×îÍâ²ãÑ­»·£©
-    // ×Ô¶¯Ê¹ÓÃËùÓĞCPUºËĞÄ
+    // OpenMPå¹¶è¡Œå¤„ç†Xè½´ï¼ˆæœ€å¤–å±‚å¾ªç¯ï¼‰
+    // è‡ªåŠ¨ä½¿ç”¨æ‰€æœ‰CPUæ ¸å¿ƒ
 #pragma omp parallel for schedule(dynamic)
     for (int ix = 0; ix < resolution; ix++) {
         for (int iy = 0; iy < resolution; iy++) {
             for (int iz = 0; iz < resolution; iz++) {
-                //ÌåËØ±ß½çÎ»ÖÃ
+                //ä½“ç´ è¾¹ç•Œä½ç½®
                 float minX = lo.x + ix * voxelSize;
                 float minY = lo.y + iy * voxelSize;
                 float minZ = lo.z + iz * voxelSize;
                 float maxX = minX + voxelSize;
                 float maxY = minY + voxelSize;
                 float maxZ = minZ + voxelSize;
-                // ¡¾ÓÅ»¯¡¿Ê¹ÓÃ¸ü¾«È·µÄÌåËØÖĞĞÄ¼ÆËã·½Ê½
-                // ±ÜÃâ¸¡µãÀÛ»ıÎó²î£¬ÌØ±ğÊÇÔÚ¸ß·Ö±æÂÊÏÂ
+                // ã€ä¼˜åŒ–ã€‘ä½¿ç”¨æ›´ç²¾ç¡®çš„ä½“ç´ ä¸­å¿ƒè®¡ç®—æ–¹å¼
+                // é¿å…æµ®ç‚¹ç´¯ç§¯è¯¯å·®ï¼Œç‰¹åˆ«æ˜¯åœ¨é«˜åˆ†è¾¨ç‡ä¸‹
                 float cx = lo.x + (ix + 0.5f) * voxelSize;
                 float cy = lo.y + (iy + 0.5f) * voxelSize;
                 float cz = lo.z + (iz + 0.5f) * voxelSize;
-                //ÌåËØÎ»ÓÚµÄÍø¸ñË÷Òı
+                //ä½“ç´ ä½äºçš„ç½‘æ ¼ç´¢å¼•
                 int gx = std::max(0, std::min(GRID_RES - 1, (int)((cx - lo.x) / gridStep)));
                 int gy = std::max(0, std::min(GRID_RES - 1, (int)((cy - lo.y) / gridStep)));
                 int gz = std::max(0, std::min(GRID_RES - 1, (int)((cz - lo.z) / gridStep)));
                 const auto& cell = grid[(gz * GRID_RES + gy) * GRID_RES + gx];
-                //ÊÇ·ñÅö×²
+                //æ˜¯å¦ç¢°æ’
                 bool hit = false;
                 for (int t : cell) {
                     if (triangleVoxelIntersect(tris[t], cx, cy, cz, voxelSize * 0.5f)) {
@@ -363,16 +363,16 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
 
     int numVoxels = voxelBitmap.count();
     if (numVoxels == 0) {
-        std::cerr << "[VOXEL] Î´Éú³ÉÈÎºÎ±íÃæÌåËØ" << std::endl;
+        std::cerr << "[VOXEL] æœªç”Ÿæˆä»»ä½•è¡¨é¢ä½“ç´ " << std::endl;
         triangles = nullptr;
         return 0;
     }
 
-    std::cout << "[VOXEL] Éú³ÉÌåËØÊı: " << numVoxels << std::endl;
+    std::cout << "[VOXEL] ç”Ÿæˆä½“ç´ æ•°: " << numVoxels << std::endl;
 
-    // µÚÁù²½£ºÄÚ²¿ÃæÌŞ³ı£¬Éú³É×îÖÕÈı½ÇĞÎ
+    // ç¬¬å…­æ­¥ï¼šå†…éƒ¨é¢å‰”é™¤ï¼Œç”Ÿæˆæœ€ç»ˆä¸‰è§’å½¢
     std::vector<GPUTriangle> voxelTris;
-    voxelTris.reserve(numVoxels * 6); // Ô¤·ÖÅäÄÚ´æ£¬±ÜÃâ¶à´ÎÖØĞÂ·ÖÅä
+    voxelTris.reserve(numVoxels * 6); // é¢„åˆ†é…å†…å­˜ï¼Œé¿å…å¤šæ¬¡é‡æ–°åˆ†é…
 
     for (int ix = 0; ix < resolution; ix++) {
         for (int iy = 0; iy < resolution; iy++) {
@@ -383,16 +383,16 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
                 float cy = lo.y + (iy + 0.5f) * voxelSize;
                 float cz = lo.z + (iz + 0.5f) * voxelSize;
 
-                // ¼ì²é6¸öÃæÊÇ·ñĞèÒª»æÖÆ
+                // æ£€æŸ¥6ä¸ªé¢æ˜¯å¦éœ€è¦ç»˜åˆ¶
                 for (int face = 0; face < 6; ++face) {
-                    // ¼ÆËãÏàÁÚÌåËØ×ø±ê
+                    // è®¡ç®—ç›¸é‚»ä½“ç´ åæ ‡
                     int nx = ix + faceNeighbors[face][0];
                     int ny = iy + faceNeighbors[face][1];
                     int nz = iz + faceNeighbors[face][2];
 
-                    // Èç¹ûÏàÁÚÌåËØ²»´æÔÚ£¬²Å»æÖÆÕâ¸öÃæ
+                    // å¦‚æœç›¸é‚»ä½“ç´ ä¸å­˜åœ¨ï¼Œæ‰ç»˜åˆ¶è¿™ä¸ªé¢
                     if (!voxelBitmap.get(nx, ny, nz)) {
-                        // Éú³ÉÕâ¸öÃæµÄÁ½¸öÈı½ÇĞÎ
+                        // ç”Ÿæˆè¿™ä¸ªé¢çš„ä¸¤ä¸ªä¸‰è§’å½¢
                         for (int tri = 0; tri < 2; ++tri) {
                             GPUTriangle vTri;
                             int faceIdx = face * 2 + tri;
@@ -402,25 +402,25 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
                                 vTri.v[k].y = cy + cubeVerts[vidx][1] * voxelSize;
                                 vTri.v[k].z = cz + cubeVerts[vidx][2] * voxelSize;
                             }
-                            // ¼ÆËã·¨Ïß£¨¶¥µãË³ĞòÒÑ¾­±£Ö¤·¨Ïß³¯Íâ£©
+                            // è®¡ç®—æ³•çº¿ï¼ˆé¡¶ç‚¹é¡ºåºå·²ç»ä¿è¯æ³•çº¿æœå¤–ï¼‰
                             Vec3 ab = vTri.v[1] - vTri.v[0];
                             Vec3 ac = vTri.v[2] - vTri.v[0];
                             vTri.normal = ab.cross(ac).norm();
 
-                            // ¼ÆËãÖ÷ÖáµÄÈ¨ÖØ£¨¾ø¶ÔÖµ×î´óµÄÄÇ¸öÖá£©
+                            // è®¡ç®—ä¸»è½´çš„æƒé‡ï¼ˆç»å¯¹å€¼æœ€å¤§çš„é‚£ä¸ªè½´ï¼‰
                             float weightX = fabsf(vTri.normal.x);
                             float weightY = fabsf(vTri.normal.y);
                             float weightZ = fabsf(vTri.normal.z);
-                            // ¸ù¾İÖ÷Òª³¯Ïò·ÖÅä²»Í¬»Ò¶ÈÖµ
+                            // æ ¹æ®ä¸»è¦æœå‘åˆ†é…ä¸åŒç°åº¦å€¼
                             float gray;
                             if (weightX >= weightY && weightX >= weightZ) {
-                                gray = 110.0f;           // XÖáÃæ
+                                gray = 110.0f;           // Xè½´é¢
                             }
                             else if (weightY >= weightX && weightY >= weightZ) {
-                                gray = 140.0f;           // YÖáÃæ
+                                gray = 140.0f;           // Yè½´é¢
                             }
                             else {
-                                gray = 170.0f;            // ZÖáÃæ
+                                gray = 170.0f;            // Zè½´é¢
                             }
 
                             vTri.color[0] = (unsigned char)gray;
@@ -434,8 +434,8 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
         }
     }
 
-    // µÚÆß²½£º¾ÓÖĞ¹éÒ»»¯
-    //   ¼ÆËãÄ£ĞÍ°üÎ§ºĞ
+    // ç¬¬ä¸ƒæ­¥ï¼šå±…ä¸­å½’ä¸€åŒ–
+    //   è®¡ç®—æ¨¡å‹åŒ…å›´ç›’
     lo = Vec3(FLT_MAX, FLT_MAX, FLT_MAX);
     hi = Vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     for (const auto& tri : voxelTris) {
@@ -448,51 +448,51 @@ int loadVoxelObj(const char* path, GPUTriangle*& triangles) {
             hi.z = std::max(hi.z, tri.v[k].z);
         }
     }
-    //¼ÆËã¾ÓÖĞ±ä»»£¬Ó³Éäµ½[-1,1]
+    //è®¡ç®—å±…ä¸­å˜æ¢ï¼Œæ˜ å°„åˆ°[-1,1]
     Vec3 center = { (lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f };
     float maxExt = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 1e-5f });
     float scale = 2.0f / maxExt;
-    //Ã¿¸öÈı½ÇĞÎ½øĞĞ¾ÓÖĞ±ä»»
+    //æ¯ä¸ªä¸‰è§’å½¢è¿›è¡Œå±…ä¸­å˜æ¢
     for (auto& tri : voxelTris) {
         for (int k = 0; k < 3; k++) {
             tri.v[k].x = (tri.v[k].x - center.x) * scale;
             tri.v[k].y = (tri.v[k].y - center.y) * scale;
             tri.v[k].z = (tri.v[k].z - center.z) * scale;
         }
-        // ÖØĞÂ¹éÒ»»¯·¨Ïß
+        // é‡æ–°å½’ä¸€åŒ–æ³•çº¿
         tri.normal = tri.normal.norm();
     }
 
-    // µÚ°Ë²½£ºÊä³öÊı×é
+    // ç¬¬å…«æ­¥ï¼šè¾“å‡ºæ•°ç»„
     int n = (int)voxelTris.size();
     try {
         triangles = new GPUTriangle[n];
     }
     catch (...) {
-        std::cerr << "[VOXEL] ÄÚ´æ·ÖÅä´íÎó" << std::endl;
+        std::cerr << "[VOXEL] å†…å­˜åˆ†é…é”™è¯¯" << std::endl;
         triangles = nullptr;
         return 0;
     }
     for (int i = 0; i < n; i++) triangles[i] = voxelTris[i];
 
-    std::cout << "[VOXEL] ±íÃæÌåËØÊı: " << numVoxels
-        << " ¿é£¬" << n << " ¸öÈı½ÇĞÎ£¨ÄÚ²¿ÃæÌŞ³ı¼õÉÙÁË"
-        << (int)(100 - (float)n / ((float)numVoxels * 12) * 100) << "%£©"
-        << "£¬À´×ÔÓÚ " << path << std::endl;
+    std::cout << "[VOXEL] è¡¨é¢ä½“ç´ æ•°: " << numVoxels
+        << " å—ï¼Œ" << n << " ä¸ªä¸‰è§’å½¢ï¼ˆå†…éƒ¨é¢å‰”é™¤å‡å°‘äº†"
+        << (int)(100 - (float)n / ((float)numVoxels * 12) * 100) << "%ï¼‰"
+        << "ï¼Œæ¥è‡ªäº " << path << std::endl;
     return n;
 }
 
-// µ¼³öÌåËØ»¯ºóµÄÈı½ÇĞÎÎªOBJÎÄ¼ş
+// å¯¼å‡ºä½“ç´ åŒ–åçš„ä¸‰è§’å½¢ä¸ºOBJæ–‡ä»¶
 bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris) {
     if (!tris || numTris <= 0) return false;
 
     std::ofstream file(path);
     if (!file.is_open()) return false;
 
-    // OBJ ÎÄ¼şÍ·
+    // OBJ æ–‡ä»¶å¤´
     file << "# Voxelized OBJ exported from 3DViewer\n";
 
-    // 1. ¶¥µãÈ¥ÖØ£¨¹şÏ£±í¼ÓËÙ£¬O(n)£©
+    // 1. é¡¶ç‚¹å»é‡ï¼ˆå“ˆå¸Œè¡¨åŠ é€Ÿï¼ŒO(n)ï¼‰
     std::vector<Vec3> uniqueVerts;
     std::vector<int> vertIdx(numTris * 3);
     std::unordered_map<size_t, std::vector<std::pair<Vec3, int>>> hashMap;
@@ -529,14 +529,14 @@ bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris) {
         }
     }
 
-    // 2. Ğ´ÈëÈ¥ÖØºóµÄ¶¥µã
+    // 2. å†™å…¥å»é‡åçš„é¡¶ç‚¹
     file << "# Vertices: " << uniqueVerts.size() << "\n";
     for (const auto& v : uniqueVerts) {
         file << "v " << v.x << " " << v.y << " " << v.z << "\n";
     }
     file << "\n";
 
-    // 3. Ğ´Èë·¨Ïß
+    // 3. å†™å…¥æ³•çº¿
     file << "# Normals: " << numTris << "\n";
     for (int i = 0; i < numTris; ++i) {
         const Vec3& n = tris[i].normal;
@@ -544,20 +544,20 @@ bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris) {
     }
     file << "\n";
 
-    // 4. Ğ´ÈëÃæ£¨OBJ Ë÷Òı´Ó 1 ¿ªÊ¼£©
+    // 4. å†™å…¥é¢ï¼ˆOBJ ç´¢å¼•ä» 1 å¼€å§‹ï¼‰
     file << "# Faces: " << numTris << "\n";
     for (int i = 0; i < numTris; ++i) {
         int v1 = vertIdx[i * 3 + 0] + 1;
         int v2 = vertIdx[i * 3 + 1] + 1;
         int v3 = vertIdx[i * 3 + 2] + 1;
-        file << "f " << v1 << "//" << (i + 1)
+        file << "f " << v1 << "//" << (i + 1)   //é¡¶ç‚¹ç´¢å¼•ï¼Œï¼Œæ³•çº¿ç´¢å¼•ï¼ˆé¢çš„æ³•å‘é‡ç”¨ä½œé¡¶ç‚¹çš„æ³•å‘é‡ï¼‰
             << " " << v2 << "//" << (i + 1)
             << " " << v3 << "//" << (i + 1) << "\n";
     }
 
     file.close();
-    std::cout << "[VOXEL] µ¼³öOBJ³É¹¦: " << path << "\n";
-    std::cout << "[VOXEL] ¶¥µãÊı: " << uniqueVerts.size()
-        << ", ÃæÊı: " << numTris << std::endl;
+    std::cout << "[VOXEL] å¯¼å‡ºOBJæˆåŠŸ: " << path << "\n";
+    std::cout << "[VOXEL] é¡¶ç‚¹æ•°: " << uniqueVerts.size()
+        << ", é¢æ•°: " << numTris << std::endl;
     return true;
 }

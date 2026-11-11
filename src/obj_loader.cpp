@@ -1,84 +1,84 @@
-#include "render.h"
+ï»¿#include "render.h"
 #include <fstream>
 #include <sstream>      //std::istringstream
 #include <iostream>
 #include <vector>
 #include <algorithm>
 
-//loadOBJ - ½âÎöOBJÎÄ¼ş²¢Éú³ÉÈı½ÇĞÎÊı×é
+//loadOBJ - è§£æOBJæ–‡ä»¶å¹¶ç”Ÿæˆä¸‰è§’å½¢æ•°ç»„
 int loadOBJ(const char* path, GPUTriangle*& triangles) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[OBJ] ÎŞ·¨´ò¿ªÎÄ¼ş: " << path << std::endl;
+        std::cerr << "[OBJ] æ— æ³•æ‰“å¼€æ–‡ä»¶: " << path << std::endl;
         triangles = nullptr;
         return 0;
     }
 
-    std::vector<Vec3> verts;        //¶¥µã¼¯ºÏ
-    std::vector<GPUTriangle> tris;  //Èı½ÇĞÍ¼¯ºÏ£¨ÁÙÊ±£©
-    std::string line;               //½ÓÊÕÃ¿ĞĞÊı¾İÒÔ×ª»»
-    int faceIdx = 0;                //ÃæĞòºÅ
-    int lineNum = 0;                //µ±Ç°ĞĞºÅ
+    std::vector<Vec3> verts;        //é¡¶ç‚¹é›†åˆ
+    std::vector<GPUTriangle> tris;  //ä¸‰è§’å‹é›†åˆï¼ˆä¸´æ—¶ï¼‰
+    std::string line;               //æ¥æ”¶æ¯è¡Œæ•°æ®ä»¥è½¬æ¢
+    int faceIdx = 0;                //é¢åºå·
+    int lineNum = 0;                //å½“å‰è¡Œå·
 
-    //µÚÒ»²½£ºµÃµ½Èı½ÇĞÎÁĞ±í
+    //ç¬¬ä¸€æ­¥ï¼šå¾—åˆ°ä¸‰è§’å½¢åˆ—è¡¨
     while (std::getline(file, line)) {
         lineNum++;
-        //½âÎö¶¥µã
+        //è§£æé¡¶ç‚¹
         if (line[0] == 'v' && line[1] == ' ') {
             float x, y, z;
-            std::istringstream iss(line.substr(2));  //Ìø¹ı "v "
+            std::istringstream iss(line.substr(2));  //è·³è¿‡ "v "
             if (iss >> x >> y >> z)
                 verts.push_back({ x, y, z });
         }
         else if (line[0] == 'f' && line[1] == ' ') {
-            int vi[64];     //¶¥µãË÷ÒıÊı×é£¨×î¶àÖ§³Ö64±ßĞÎ£©
-            int cnt = 0;    //µ±Ç°ÃæµÄ¶¥µã¼ÆÊı
-            std::istringstream iss(line.substr(2));  //Ìø¹ı "f "
+            int vi[64];     //é¡¶ç‚¹ç´¢å¼•æ•°ç»„ï¼ˆæœ€å¤šæ”¯æŒ64è¾¹å½¢ï¼‰
+            int cnt = 0;    //å½“å‰é¢çš„é¡¶ç‚¹è®¡æ•°
+            std::istringstream iss(line.substr(2));  //è·³è¿‡ "f "
             std::string token;
             while (iss >> token && cnt < 64) {
-                //Ö»¶Á¶¥µã£¬²»¶ÁÎÆÀíºÍ·¨Ïß
+                //åªè¯»é¡¶ç‚¹ï¼Œä¸è¯»çº¹ç†å’Œæ³•çº¿
                 int v;
                 std::istringstream tss(token);
                 tss >> v;
-                //objË÷Òı×ªc++Ë÷Òı
+                //objç´¢å¼•è½¬c++ç´¢å¼•ï¼Œè´Ÿæ•°æ˜¯å€’æ•°ç¬¬å‡ ä¸ª
                 vi[cnt++] = (v > 0) ? v - 1 : (int)verts.size() + v;
             }
-            //Èç¹û¶¥µãÊı³¬¹ı64¸ö£¬·¢³ö¾¯¸æ£¨Êµ¼Ê»á±»½Ø¶Ï,¶øÇÒÒ»°ã²»»á³öÏÖ£©
+            //å¦‚æœé¡¶ç‚¹æ•°è¶…è¿‡64ä¸ªï¼Œå‘å‡ºè­¦å‘Šï¼ˆå®é™…ä¼šè¢«æˆªæ–­,è€Œä¸”ä¸€èˆ¬ä¸ä¼šå‡ºç°ï¼‰
             if (cnt >= 64) {
-                std::cerr << "[OBJ] ¾¯¸æ: objÎÄ¼şµÚ " << lineNum
-                    << " ĞĞ¶¥µã¹ı¶à" << std::endl;
+                std::cerr << "[OBJ] è­¦å‘Š: objæ–‡ä»¶ç¬¬ " << lineNum
+                    << " è¡Œé¡¶ç‚¹è¿‡å¤š" << std::endl;
             }
-            //ÉÈ·Ö¸î£ºÒÔµÚÒ»¸ö¶¥µãÎª¹«¹²¶¥µã£¬ÒÀ´ÎÁ¬½ÓÏàÁÚ¶¥µã
+            //æ‰‡åˆ†å‰²ï¼šä»¥ç¬¬ä¸€ä¸ªé¡¶ç‚¹ä¸ºå…¬å…±é¡¶ç‚¹ï¼Œä¾æ¬¡è¿æ¥ç›¸é‚»é¡¶ç‚¹
             for (int i = 1; i + 1 < cnt; ++i) {
-                //¼ì²éÈı¸ö¶¥µãË÷ÒıÊÇ·ñÓĞĞ§£¨·ÀÖ¹Ô½½ç£©
+                //æ£€æŸ¥ä¸‰ä¸ªé¡¶ç‚¹ç´¢å¼•æ˜¯å¦æœ‰æ•ˆï¼ˆé˜²æ­¢è¶Šç•Œï¼‰
                 if (vi[0] < 0 || vi[0] >= (int)verts.size()) continue;
                 if (vi[i] < 0 || vi[i] >= (int)verts.size()) continue;
                 if (vi[i + 1] < 0 || vi[i + 1] >= (int)verts.size()) continue;
 
                 GPUTriangle tri;
-                tri.v[0] = verts[vi[0]];            //ÉÈµÄ¹«¹²¶¥µã
+                tri.v[0] = verts[vi[0]];            //æ‰‡çš„å…¬å…±é¡¶ç‚¹
                 tri.v[1] = verts[vi[i]];
                 tri.v[2] = verts[vi[i + 1]];
-                Vec3 ab = tri.v[1] - tri.v[0];      //±ßÏòÁ¿AB
+                Vec3 ab = tri.v[1] - tri.v[0];      //è¾¹å‘é‡AB
                 Vec3 ac = tri.v[2] - tri.v[0];
-                tri.normal = ab.cross(ac).norm();   //²æ»ı²¢¹éÒ»»¯µÃÃæ·¨Ïß
-                //·ÖÅäÑÕÉ«
-                const unsigned char c[3] = { 190,190,190 };
-                tri.color[0] = c[0];   //R·ÖÁ¿
-                tri.color[1] = c[1];   //G·ÖÁ¿
-                tri.color[2] = c[2];   //B·ÖÁ¿
-                tris.push_back(tri);   //½«Èı½ÇĞÎÌí¼Óµ½ÁÙÊ±Êı×é
-                faceIdx++;             //Ãæ¼ÆÊıÆ÷µİÔö
+                tri.normal = ab.cross(ac).norm();   //å‰ç§¯å¹¶å½’ä¸€åŒ–å¾—é¢æ³•çº¿
+                //åˆ†é…é¢œè‰²
+                const unsigned char c[3] = { 180,180,180 };
+                tri.color[0] = c[0];   //Råˆ†é‡
+                tri.color[1] = c[1];   //Gåˆ†é‡
+                tri.color[2] = c[2];   //Båˆ†é‡
+                tris.push_back(tri);   //å°†ä¸‰è§’å½¢æ·»åŠ åˆ°ä¸´æ—¶æ•°ç»„
+                faceIdx++;             //é¢è®¡æ•°å™¨é€’å¢
             }
         }
     }
     file.close();
 
-    //µÚ¶ş²½£º¾ÓÖĞ¹éÒ»»¯Ëõ·Å
+    //ç¬¬äºŒæ­¥ï¼šå±…ä¸­å½’ä¸€åŒ–ç¼©æ”¾
     if (!tris.empty()) {
-        //Ò»£ºËã°üÎ§ºĞ£¨AABBÖá¶ÔÆë£©
-        Vec3 lo = { FLT_MAX,  FLT_MAX,  FLT_MAX };   //×îĞ¡µã£¨³õÊ¼»¯Îª×î´óÖµ£©
-        Vec3 hi = { -FLT_MAX, -FLT_MAX, -FLT_MAX };   //×î´óµã£¨³õÊ¼»¯Îª×îĞ¡Öµ£©
+        //ä¸€ï¼šç®—åŒ…å›´ç›’ï¼ˆAABBè½´å¯¹é½ï¼‰
+        Vec3 lo = { FLT_MAX,  FLT_MAX,  FLT_MAX };   //æœ€å°ç‚¹ï¼ˆåˆå§‹åŒ–ä¸ºæœ€å¤§å€¼ï¼‰
+        Vec3 hi = { -FLT_MAX, -FLT_MAX, -FLT_MAX };   //æœ€å¤§ç‚¹ï¼ˆåˆå§‹åŒ–ä¸ºæœ€å°å€¼ï¼‰
         for (auto& tri : tris)
             for (int k = 0; k < 3; k++) {
                 lo.x = std::min(lo.x, tri.v[k].x);
@@ -88,13 +88,13 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
                 hi.y = std::max(hi.y, tri.v[k].y);
                 hi.z = std::max(hi.z, tri.v[k].z);
             }
-        //¶ş£ºËãÖĞĞÄµã
+        //äºŒï¼šç®—ä¸­å¿ƒç‚¹
         Vec3 center = { (lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f };
-        //Èı£ºÑ¡×î³¤µÄ±ßÈ·¶¨Ëõ·Å³Ì¶È£¬ÈôÈ«Îª0³ı·¨»á³ö´í£¬»»³É¼«Ğ¡Êı´úÌæ
+        //ä¸‰ï¼šé€‰æœ€é•¿çš„è¾¹ç¡®å®šç¼©æ”¾ç¨‹åº¦ï¼Œè‹¥å…¨ä¸º0é™¤æ³•ä¼šå‡ºé”™ï¼Œæ¢æˆæå°æ•°ä»£æ›¿
         float maxExt = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 1e-5f });
-        //ËÄ£ºËõ·ÅÒò×Ó£¨Ê¹°üÎ§ºĞ×î³¤³¤¶È¶ÈÎª2£¬¼´°ë¾¶Ô¼Îª1£©
+        //å››ï¼šç¼©æ”¾å› å­ï¼ˆä½¿åŒ…å›´ç›’æœ€é•¿é•¿åº¦åº¦ä¸º2ï¼Œå³åŠå¾„çº¦ä¸º1ï¼‰
         float scale = 2.f / maxExt;
-        //Îå£ºÆ½ÒÆ+Ëõ·Å
+        //äº”ï¼šå¹³ç§»+ç¼©æ”¾
 #pragma omp parallel for
         for (int i = 0; i < (int)tris.size(); i++) {
             auto& tri = tris[i];
@@ -104,7 +104,7 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
                 tri.v[k].z = (tri.v[k].z - center.z) * scale;
             }
         }
-        //Áù£ºÖØĞÂ¼ÆËãËùÓĞÃæ·¨Ïß±£Ö¤±ä»»ºó°²È«
+        //å…­ï¼šé‡æ–°è®¡ç®—æ‰€æœ‰é¢æ³•çº¿ä¿è¯å˜æ¢åå®‰å…¨
 #pragma omp parallel for
         for (int i = 0; i < (int)tris.size(); i++) {
                 auto& tri = tris[i];
@@ -114,26 +114,26 @@ int loadOBJ(const char* path, GPUTriangle*& triangles) {
         }
     }
 
-    //µÚÈı²½£º·ÖÅäÊä³öÊı×é£¬·µ»Ø×îÖÕÈı½ÇĞÎÊıÁ¿
+    //ç¬¬ä¸‰æ­¥ï¼šåˆ†é…è¾“å‡ºæ•°ç»„ï¼Œè¿”å›æœ€ç»ˆä¸‰è§’å½¢æ•°é‡
     int n = (int)tris.size();
     if (n == 0) {
-        fprintf(stderr, "[OBJ] Î´·¢ÏÖÈı½ÇĞÎÓÚ: %s\n", path);
+        fprintf(stderr, "[OBJ] æœªå‘ç°ä¸‰è§’å½¢äº: %s\n", path);
         triangles = nullptr;
         return 0;
     }
-    //·ÖÅäÄÚ´æ
+    //åˆ†é…å†…å­˜
     try {
         triangles = new GPUTriangle[n];
     }
     catch (...) {
-        fprintf(stderr, "[OBJ] ÄÚ´æ·ÖÅäÊ§°Ü£¬¹² %d ¸öÈı½ÇĞÎ\n", n);
+        fprintf(stderr, "[OBJ] å†…å­˜åˆ†é…å¤±è´¥ï¼Œå…± %d ä¸ªä¸‰è§’å½¢\n", n);
         triangles = nullptr;
         return 0;
     }
-    //½«ÁÙÊ±vectorÖĞµÄÈı½ÇĞÎÊı¾İ¸´ÖÆµ½Êä³öÊı×é
+    //å°†ä¸´æ—¶vectorä¸­çš„ä¸‰è§’å½¢æ•°æ®å¤åˆ¶åˆ°è¾“å‡ºæ•°ç»„
     for (int i = 0; i < n; i++) triangles[i] = tris[i];
-    //¼ÓÔØ³É¹¦
-    fprintf(stdout, "[OBJ] ¼ÓÔØ %d ¶¥µã, %d Èı½ÇĞÎ: %s\n",
+    //åŠ è½½æˆåŠŸ
+    fprintf(stdout, "[OBJ] åŠ è½½ %d é¡¶ç‚¹, %d ä¸‰è§’å½¢: %s\n",
         (int)verts.size(), n, path);
 
     return n;

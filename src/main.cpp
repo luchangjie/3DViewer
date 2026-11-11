@@ -1,21 +1,21 @@
+ï»¿//==================================================================
+// main.cpp - Win32çª—å£ + æ¶ˆæ¯å¾ªç¯ + æ‘„åƒæœºæ§åˆ¶
+// æ„å»ºæ–¹å¼ï¼šä»…ä½¿ç”¨MSVCï¼ˆæ— éœ€CUDAå¤´æ–‡ä»¶ï¼Œè¿è¡Œæ—¶åŠ è½½render_kernel.dllï¼‰
+// æ“ä½œè¯´æ˜ï¼š
+//   é¼ æ ‡å·¦é”®æ‹–æ‹½   - æ—‹è½¬æ¨¡å‹
+//   é¼ æ ‡å³é”®æ‹–æ‹½   - ç§»åŠ¨è§†è§’ï¼ˆè§†è§‰ä¸Šç§»åŠ¨æ¨¡å‹ï¼‰
+//   é¼ æ ‡æ»šè½®       - ç¼©æ”¾ï¼ˆæ¨è¿‘/æ‹‰è¿œï¼‰
+//   Wé”®            - åˆ‡æ¢çº¿æ¡†/å®ä½“æ˜¾ç¤ºæ¨¡å¼
+//   Oé”®            - æ‰“å¼€OBJæ–‡ä»¶å¯¹è¯æ¡†
+//   Vé”®            - åˆ‡æ¢ä½“ç´ æ¨¡å¼
+//   Gé”®            - å¯¼å‡ºvoxelçš„objæ–‡ä»¶ï¼ˆæ™®é€šæ¨¡å¼æ— æ•ˆæœï¼‰
+//   Ré”®            - é‡ç½®æ‘„åƒæœºä½ç½®
+//   ESCé”®          - é€€å‡ºç¨‹åº
 //==================================================================
-// main.cpp - Win32´°¿Ú + ÏûÏ¢Ñ­»· + ÉãÏñ»ú¿ØÖÆ
-// ¹¹½¨·½Ê½£º½öÊ¹ÓÃMSVC£¨ÎŞĞèCUDAÍ·ÎÄ¼ş£¬ÔËĞĞÊ±¼ÓÔØrender_kernel.dll£©
-// ²Ù×÷ËµÃ÷£º
-//   Êó±ê×ó¼üÍÏ×§   - Ğı×ªÄ£ĞÍ
-//   Êó±êÓÒ¼üÍÏ×§   - ÒÆ¶¯ÊÓ½Ç£¨ÊÓ¾õÉÏÒÆ¶¯Ä£ĞÍ£©
-//   Êó±ê¹öÂÖ       - Ëõ·Å£¨ÍÆ½ü/À­Ô¶£©
-//   W¼ü            - ÇĞ»»Ïß¿ò/ÊµÌåÏÔÊ¾Ä£Ê½
-//   O¼ü            - ´ò¿ªOBJÎÄ¼ş¶Ô»°¿ò
-//   V¼ü            - ÇĞ»»ÌåËØÄ£Ê½
-//   G¼ü            - µ¼³övoxelµÄobjÎÄ¼ş£¨ÆÕÍ¨Ä£Ê½ÎŞĞ§¹û£©
-//   R¼ü            - ÖØÖÃÉãÏñ»úÎ»ÖÃ
-//   ESC¼ü          - ÍË³ö³ÌĞò
-//==================================================================
-#define WIN32_LEAN_AND_MEAN		//¾«¼òWindowsÍ·ÎÄ¼ş£¬ÅÅ³ı²»³£ÓÃµÄAPIÉùÃ÷
-#define NOMINMAX				//½ûÖ¹Windows.h¶¨Òåmin/maxºê£¨±ÜÃâÓëstd::min/max³åÍ»£©
+#define WIN32_LEAN_AND_MEAN		//ç²¾ç®€Windowså¤´æ–‡ä»¶ï¼Œæ’é™¤ä¸å¸¸ç”¨çš„APIå£°æ˜
+#define NOMINMAX				//ç¦æ­¢Windows.hå®šä¹‰min/maxå®ï¼ˆé¿å…ä¸std::min/maxå†²çªï¼‰
 #include <windows.h>			//windowsAPI
-#include <commdlg.h>			//Ê¹³ÌĞò¿ÉÒÔ´ò¿ªÎÄ¼ş
+#include <commdlg.h>			//ä½¿ç¨‹åºå¯ä»¥æ‰“å¼€æ–‡ä»¶
 #include <cfloat>
 #include <string>
 #include <fstream>
@@ -23,181 +23,181 @@
 #include "Direct2DDisplay.h"         
 #include <vector>               
 
-int loadOBJ(const char* path, GPUTriangle*& triangles);	        //ÔÚobj_loader.cpp
+int loadOBJ(const char* path, GPUTriangle*& triangles);	        //åœ¨obj_loader.cpp
 bool exportVoxelObj(const char* path, const GPUTriangle* tris, int numTris);
-int loadVoxelObj(const char* path, GPUTriangle*& triangles);    //ÔÚvoxel_loader.cpp
-void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes);  //ÔÚbvh_builder.cpp
+int loadVoxelObj(const char* path, GPUTriangle*& triangles);    //åœ¨voxel_loader.cpp
+void buildBVH(GPUTriangle* tris, int numTris, std::vector<BVHNode>& outNodes);  //åœ¨bvh_builder.cpp
 
-//È«¾Ö³£Á¿
-static const float	FOV_Y = 60.f * 3.14159265f / 180.f;	//´¹Ö±ÊÓ³¡½Ç£¨»¡¶ÈÖÆ£©
-static const float	Z_NEAR = 0.01f;	                    //½ü²Ã¼ôÃæ
-static const float  Z_FAR = 100.f;	                    //Ô¶²Ã¼ôÃæ¾àÀë
-static std::vector<BVHNode> g_hBVH;                     //Èı¸Ä£ºCPU ¶Ë BVH ½ÚµãÊı×é
-static int                  g_numBVHNodes = 0;          //Èı¸Ä£ºBVH ½ÚµãÊıÁ¿
-static HMODULE      g_hKernel = nullptr;	            //Windows¸ødllµÄ¾ä±ú
+//å…¨å±€å¸¸é‡
+static const float	FOV_Y = 60.f * 3.14159265f / 180.f;	//å‚ç›´è§†åœºè§’ï¼ˆå¼§åº¦åˆ¶ï¼‰
+static const float	Z_NEAR = 0.01f;	                    //è¿‘è£å‰ªé¢
+static const float  Z_FAR = 100.f;	                    //è¿œè£å‰ªé¢è·ç¦»
+static std::vector<BVHNode> g_hBVH;                     //ä¸‰æ”¹ï¼šCPU ç«¯ BVH èŠ‚ç‚¹æ•°ç»„
+static int                  g_numBVHNodes = 0;          //ä¸‰æ”¹ï¼šBVH èŠ‚ç‚¹æ•°é‡
+static HMODULE      g_hKernel = nullptr;	            //Windowsç»™dllçš„å¥æŸ„
 
-//È«¾Ö±äÁ¿
-static int       g_winW = 900;                  //´°¿Ú¿í
-static int       g_winH = 700;                  //´°¿Ú¸ß
-static unsigned int* g_hFramebuf = nullptr;     //Ö¸ÏòÖ¡äÖÈ¾½á¹ûÏñËØÊı×é£¨BGRA¸ñÊ½£©µÄÖ¸Õë
-static GPUTriangle* g_hTris = nullptr;          //Èı½ÇĞÎÊı×é£¨Ö÷»ú¶Ë£©
-static int       g_numTris = 0;                 //Èı½ÇĞÎÊıÁ¿
-static float     g_rotX = 0.3f;                 //ÉãÏñ»úÈÆXÖáĞı×ª½Ç¶È£¨»¡¶È£©
-static float     g_rotY = 0.5f;                 //ÉãÏà»úÈÆYÖáĞı×ª½Ç¶È£¨»¡¶È£©
-static float     g_zoom = 4.0f;                 //ÉãÏñ»ú¾àÀë£¨Ëõ·Å¼¶±ğ£©
-static bool      g_dragging = false;            //Êó±êÊÇ·ñÕıÔÚÍÏ×§£¨×ó¼ü°´×¡£©
-static int       g_lastMX = 0, g_lastMY = 0;    //ÉÏÒ»Ö¡µÄÊó±êÎ»ÖÃ£¨ÓÃÓÚ¼ÆËãÔöÁ¿£©
-static bool      g_panning = false;             //ÓÒ¼üÍÏ×§£¨Æ½ÒÆ£©
-static float     g_panX = 0.f, g_panY = 0.f;    //Æ½ÒÆÁ¿
-static bool      g_wireframe = false;           //ÊÇ·ñÏß¿òÄ£Ê½
-static bool      g_voxelMode = false;           //ÊÇ·ñÌåËØÄ£Ê½
-       int       g_voxelResolution = 64;        //µ±Ç°ÌåËØÃÜ¶È
-static std::string g_currentModelPath;          //¼Ç×¡µ±Ç°Ä£ĞÍÂ·¾¶
-static bool g_isEmbeddedModel = false;          //ÊÇ·ñÊÇÄÚÇ¶ÁÙÊ±Ä£ĞÍ
-//Windows×ÊÔ´¾ä±ú
-static HWND         g_hwnd = nullptr;           //Ö÷´°¿Ú¾ä±ú Handle to a Window
-static Direct2DDisplay g_display;               //Direct2D ÏÔÊ¾Æ÷
+//å…¨å±€å˜é‡
+static int       g_winW = 900;                  //çª—å£å®½
+static int       g_winH = 700;                  //çª—å£é«˜
+static unsigned int* g_hFramebuf = nullptr;     //æŒ‡å‘å¸§æ¸²æŸ“ç»“æœåƒç´ æ•°ç»„ï¼ˆBGRAæ ¼å¼ï¼‰çš„æŒ‡é’ˆ
+static GPUTriangle* g_hTris = nullptr;          //ä¸‰è§’å½¢æ•°ç»„ï¼ˆä¸»æœºç«¯ï¼‰
+static int       g_numTris = 0;                 //ä¸‰è§’å½¢æ•°é‡
+static float     g_rotX = 0.3f;                 //æ‘„åƒæœºç»•Xè½´æ—‹è½¬è§’åº¦ï¼ˆå¼§åº¦ï¼‰
+static float     g_rotY = 0.5f;                 //æ‘„ç›¸æœºç»•Yè½´æ—‹è½¬è§’åº¦ï¼ˆå¼§åº¦ï¼‰
+static float     g_zoom = 4.0f;                 //æ‘„åƒæœºè·ç¦»ï¼ˆç¼©æ”¾çº§åˆ«ï¼‰
+static bool      g_dragging = false;            //é¼ æ ‡æ˜¯å¦æ­£åœ¨æ‹–æ‹½ï¼ˆå·¦é”®æŒ‰ä½ï¼‰
+static int       g_lastMX = 0, g_lastMY = 0;    //ä¸Šä¸€å¸§çš„é¼ æ ‡ä½ç½®ï¼ˆç”¨äºè®¡ç®—å¢é‡ï¼‰
+static bool      g_panning = false;             //å³é”®æ‹–æ‹½ï¼ˆå¹³ç§»ï¼‰
+static float     g_panX = 0.f, g_panY = 0.f;    //å¹³ç§»é‡
+static bool      g_wireframe = false;           //æ˜¯å¦çº¿æ¡†æ¨¡å¼
+static bool      g_voxelMode = false;           //æ˜¯å¦ä½“ç´ æ¨¡å¼
+       int       g_voxelResolution = 64;        //å½“å‰ä½“ç´ å¯†åº¦
+static std::string g_currentModelPath;          //è®°ä½å½“å‰æ¨¡å‹è·¯å¾„
+static bool g_isEmbeddedModel = false;          //æ˜¯å¦æ˜¯å†…åµŒä¸´æ—¶æ¨¡å‹
+//Windowsèµ„æºå¥æŸ„
+static HWND         g_hwnd = nullptr;           //ä¸»çª—å£å¥æŸ„ Handle to a Window
+static Direct2DDisplay g_display;               //Direct2D æ˜¾ç¤ºå™¨
 
 
 typedef int (*cudaInit_t)(int, int, char*, int);
 typedef void (*cudaUploadTriangles_t)(const GPUTriangle*, int);
 typedef void (*cudaRender_t)(const RenderParams&, unsigned int*);
 typedef void (*cudaShutdown_t)(void);
-typedef void (*cudaUploadBVH_t)(const BVHNode*, int);           //Èı¸Ä
+typedef void (*cudaUploadBVH_t)(const BVHNode*, int);           //ä¸‰æ”¹
 
-//È«¾ÖÖ¸Õë±äÁ¿£¨Í¨¹ıGetProcAddress»ñÈ¡DLLÖĞº¯ÊıµØÖ·£©£¬·Ö±ğÖ¸ÏòdllµÄ4¸öº¯Êı
+//å…¨å±€æŒ‡é’ˆå˜é‡ï¼ˆé€šè¿‡GetProcAddressè·å–DLLä¸­å‡½æ•°åœ°å€ï¼‰ï¼Œåˆ†åˆ«æŒ‡å‘dllçš„4ä¸ªå‡½æ•°
 static cudaInit_t				p_cudaInit = nullptr;
 static cudaUploadTriangles_t	p_cudaUploadTriangles = nullptr;
 static cudaRender_t				p_cudaRender = nullptr;
 static cudaShutdown_t			p_cudaShutdown = nullptr;
-static cudaUploadBVH_t          p_cudaUploadBVH = nullptr;      //Èı¸Ä£ºÉÏ´« BVH µ½ÏÔ´æµÄº¯Êı
+static cudaUploadBVH_t          p_cudaUploadBVH = nullptr;      //ä¸‰æ”¹ï¼šä¸Šä¼  BVH åˆ°æ˜¾å­˜çš„å‡½æ•°
 
 //-------------------------------------------------------------------
-//¼ÓÔØDLL²¢»ñÈ¡ËùÓĞCUDAº¯ÊıÖ¸Õë£¬³õÊ¼»¯
+//åŠ è½½DLLå¹¶è·å–æ‰€æœ‰CUDAå‡½æ•°æŒ‡é’ˆï¼Œåˆå§‹åŒ–
 static bool initRenderer() {
     g_hKernel = LoadLibraryA("render_kernel.dll");	    
     if (!g_hKernel) {
-        //¼ÓÔØÊ§°Ü£ºÏÔÊ¾´íÎóÏûÏ¢¿ò
+        //åŠ è½½å¤±è´¥ï¼šæ˜¾ç¤ºé”™è¯¯æ¶ˆæ¯æ¡†
         MessageBoxA(nullptr,
-            "²»ÄÜ¼ÓÔØrender_kernel.dll!\nÇëÏÈ»ñÈ¡ÕıÈ·dllÎÄ¼ş.",
+            "ä¸èƒ½åŠ è½½render_kernel.dll!\nè¯·å…ˆè·å–æ­£ç¡®dllæ–‡ä»¶.",
             "3D Viewer", MB_ICONERROR);
         return false;
     }
-    //µ÷ÓÃGetProcAddress»ñÈ¡dllÀïµÄº¯Êı
+    //è°ƒç”¨GetProcAddressè·å–dllé‡Œçš„å‡½æ•°
     p_cudaInit              = (cudaInit_t)           GetProcAddress(g_hKernel, "cudaInit");
     p_cudaUploadBVH         = (cudaUploadBVH_t)      GetProcAddress(g_hKernel, "cudaUploadBVH");
     p_cudaUploadTriangles   = (cudaUploadTriangles_t)GetProcAddress(g_hKernel, "cudaUploadTriangles");
     p_cudaRender            = (cudaRender_t)         GetProcAddress(g_hKernel, "cudaRender");
     p_cudaShutdown          = (cudaShutdown_t)       GetProcAddress(g_hKernel, "cudaShutdown");
-    //¼ì²éº¯ÊıÊÇ·ñ¼ÓÔØ³É¹¦
+    //æ£€æŸ¥å‡½æ•°æ˜¯å¦åŠ è½½æˆåŠŸ
     if (!p_cudaInit || !p_cudaRender || !p_cudaShutdown) {
         MessageBoxA(nullptr,
-            "render_kernel.dll: È±ÉÙËùĞèexportº¯Êı!\nÇëÈ·±£¹¹½¨Ê±½«ÅäÖÃÀàĞÍÀàĞÍÉèÖÃÎª¡°¶¯Ì¬¿â¡±.",
+            "render_kernel.dll: ç¼ºå°‘æ‰€éœ€exportå‡½æ•°!\nè¯·ç¡®ä¿æ„å»ºæ—¶å°†é…ç½®ç±»å‹ç±»å‹è®¾ç½®ä¸ºâ€œåŠ¨æ€åº“â€.",
             "3D Viewer", MB_ICONERROR);
         return false;
     }
 
-    //µ÷ÓÃCUDA³õÊ¼»¯º¯Êı
-    char gpuName[256] = {};              //ÓÃÓÚ½ÓÊÕGPUÃû³ÆµÄ»º³åÇø
+    //è°ƒç”¨CUDAåˆå§‹åŒ–å‡½æ•°
+    char gpuName[256] = {};              //ç”¨äºæ¥æ”¶GPUåç§°çš„ç¼“å†²åŒº
     if (p_cudaInit(g_winW, g_winH, gpuName, sizeof(gpuName)) != 0) {
-        //³õÊ¼»¯Ê§°Ü£¨ÎŞNVIDIA GPU»òÆäËû´íÎó£©
+        //åˆå§‹åŒ–å¤±è´¥ï¼ˆæ— NVIDIA GPUæˆ–å…¶ä»–é”™è¯¯ï¼‰
         MessageBoxA(nullptr,
-            "CUDA ³õÊ¼»¯Ê§°Ü!\nÎ´·¢ÏÖNVIDIAÏÔ¿¨.",
+            "CUDA åˆå§‹åŒ–å¤±è´¥!\næœªå‘ç°NVIDIAæ˜¾å¡.",
             "3D Viewer", MB_ICONERROR);
         return false;
     }
-    //´òÓ¡¼ì²âµ½µÄGPUÉè±¸Ãû³Æ
+    //æ‰“å°æ£€æµ‹åˆ°çš„GPUè®¾å¤‡åç§°
     printf("[CUDA] Device: %s\n", gpuName);
     return true;
 }
 
 //-------------------------------------------------------------------
-//ÏÔÊ¾·½·¨
+//æ˜¾ç¤ºæ–¹æ³•
 static void initDisplay(HWND hwnd, int w, int h) {
     g_display.init(hwnd, w, h);
     g_hFramebuf = new unsigned int[w * h];
 }
 
 //-------------------------------------------------------------------
-//´ò¿ªÎÄ¼ş ¶Ô»°¿ò
+//æ‰“å¼€æ–‡ä»¶ å¯¹è¯æ¡†
 static std::string openFileDialog(HWND owner) {
-    OPENFILENAMEA ofn = {};                 //ÎÄ¼ş¶Ô»°¿ò½á¹¹Ìå
-    ofn.lStructSize = sizeof(ofn);          //WindowsÒªÇóÉèÖÃ½á¹¹Ìå´óĞ¡
-    ofn.hwndOwner = owner;                  //¸¸´°¿ÚÊÇowner
+    OPENFILENAMEA ofn = {};                 //æ–‡ä»¶å¯¹è¯æ¡†ç»“æ„ä½“
+    ofn.lStructSize = sizeof(ofn);          //Windowsè¦æ±‚è®¾ç½®ç»“æ„ä½“å¤§å°
+    ofn.hwndOwner = owner;                  //çˆ¶çª—å£æ˜¯owner
     ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";
-    char buf[MAX_PATH] = {};                //¶¨¸ö260×Ö½ÚµÄÊı×é
-    ofn.lpstrFile = buf;                    //Ö¸ÏòbufÀ´ÌîÂ·¾¶
-    ofn.nMaxFile = MAX_PATH;                //»º³åÇø´óĞ¡
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;  //ÎÄ¼ş±ØĞë´æÔÚ£¬Â·¾¶±ØĞë´æÔÚ
-    return GetOpenFileNameA(&ofn) ? std::string(buf) : "";  //´ò¿ªÎÄ¼şÑ¡Ôñ´°¿Ú£¨ÅĞ¶ÏÌõ¼ş£º¡°´ò¿ª¡±Ôò·µ»Øtrue£¬return×Ö·û´®£©
+    char buf[MAX_PATH] = {};                //å®šä¸ª260å­—èŠ‚çš„æ•°ç»„
+    ofn.lpstrFile = buf;                    //æŒ‡å‘bufæ¥å¡«è·¯å¾„
+    ofn.nMaxFile = MAX_PATH;                //ç¼“å†²åŒºå¤§å°
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;  //æ–‡ä»¶å¿…é¡»å­˜åœ¨ï¼Œè·¯å¾„å¿…é¡»å­˜åœ¨
+    return GetOpenFileNameA(&ofn) ? std::string(buf) : "";  //æ‰“å¼€æ–‡ä»¶é€‰æ‹©çª—å£ï¼ˆåˆ¤æ–­æ¡ä»¶ï¼šâ€œæ‰“å¼€â€åˆ™è¿”å›trueï¼Œreturnå­—ç¬¦ä¸²ï¼‰
 }
 
 //-------------------------------------------------------------------
-//¼ÓÔØobj²¢ÉÏ´«ÖÁGPU
+//åŠ è½½objå¹¶ä¸Šä¼ è‡³GPU
 static void loadModel(const std::string& path) {
-    //ÊÍ·Å¾ÉµÄÈı½ÇĞÎÊı¾İ
+    //é‡Šæ”¾æ—§çš„ä¸‰è§’å½¢æ•°æ®
     delete[] g_hTris;
     g_hTris = nullptr;
     g_numTris = 0;
-    g_hBVH.clear();                 //Èı¸Ä£ºÇå¿Õ¾É BVH
-    g_currentModelPath = path;      //¼ÇÂ¼Â·¾¶
-    //Èç¹ûÂ·¾¶·Ç¿Õ£¬½âÎöOBJÎÄ¼ş(Á½ÖÖ·½Ê½)
+    g_hBVH.clear();                 //ä¸‰æ”¹ï¼šæ¸…ç©ºæ—§ BVH
+    g_currentModelPath = path;      //è®°å½•è·¯å¾„
+    //å¦‚æœè·¯å¾„éç©ºï¼Œè§£æOBJæ–‡ä»¶(ä¸¤ç§æ–¹å¼)
     if (!path.empty()) {
         if (g_voxelMode)
             g_numTris = loadVoxelObj(path.c_str(), g_hTris);
         else
-            g_numTris = loadOBJ(path.c_str(), g_hTris); //string×ªÎªchar*×÷Êµ²Î
+            g_numTris = loadOBJ(path.c_str(), g_hTris); //stringè½¬ä¸ºchar*ä½œå®å‚
     }
-    //Èı¸Ä£ºÈô¼ÓÔØ³É¹¦£¬Ô­µØ¹¹½¨ BVH ²¢ÉÏ´« GPU
+    //ä¸‰æ”¹ï¼šè‹¥åŠ è½½æˆåŠŸï¼ŒåŸåœ°æ„å»º BVH å¹¶ä¸Šä¼  GPU
     if (g_numTris > 0) {
         buildBVH(g_hTris, g_numTris, g_hBVH);
         g_numBVHNodes = (int)g_hBVH.size();
     }
-    //½«Èı½ÇĞÎÊı¾İÉÏ´«µ½GPUÏÔ´æ
+    //å°†ä¸‰è§’å½¢æ•°æ®ä¸Šä¼ åˆ°GPUæ˜¾å­˜
     if (p_cudaUploadTriangles)
         p_cudaUploadTriangles(g_hTris, g_numTris);
-    //Èı¸Ä£ºÉÏ´« BVH ½Úµãµ½ÏÔ´æ
+    //ä¸‰æ”¹ï¼šä¸Šä¼  BVH èŠ‚ç‚¹åˆ°æ˜¾å­˜
     if (p_cudaUploadBVH && g_numBVHNodes > 0)
         p_cudaUploadBVH(g_hBVH.data(), g_numBVHNodes);
-    //ÖØÖÃÉãÏñ»úµ½Ä¬ÈÏÊÓ½Ç
+    //é‡ç½®æ‘„åƒæœºåˆ°é»˜è®¤è§†è§’
     g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.0f;
 }
 
 //-------------------------------------------------------------------
-//¼¯³ÉºÃµÄÖğÖ¡äÖÈ¾
+//é›†æˆå¥½çš„é€å¸§æ¸²æŸ“
 static void renderFrame() {
-    //¼ì²éÖ¡»º³åºÍäÖÈ¾º¯ÊıÊÇ·ñ¿ÉÓÃ
+    //æ£€æŸ¥å¸§ç¼“å†²å’Œæ¸²æŸ“å‡½æ•°æ˜¯å¦å¯ç”¨
     if (!g_hFramebuf || !p_cudaRender) return;
-    //¹¹½¨Ä£ĞÍ¾ØÕó£¨ÏÈÈÆYÖáĞı×ª£¬ÔÙÈÆXÖáĞı×ª£©
+    //æ„å»ºæ¨¡å‹çŸ©é˜µï¼ˆå…ˆç»•Yè½´æ—‹è½¬ï¼Œå†ç»•Xè½´æ—‹è½¬ï¼‰
     Mat4 model = Mat4::rotateX(g_rotX) * Mat4::rotateY(g_rotY);
-    //ÉãÏñ»úÎ»ÖÃ
+    //æ‘„åƒæœºä½ç½®
     Vec3 eye = { g_panX, g_panY, g_zoom };
-    Vec3 center = { g_panX, g_panY, 0.f };      //ÉãÏñ»úºÍÖĞĞÄÊÇÁ¬ÏßµÄ£¬ËùÒÔÒªÒ»ÆğÆ½ÒÆ
-    //¹¹½¨ÊÓÍ¼¾ØÕó
+    Vec3 center = { g_panX, g_panY, 0.f };      //æ‘„åƒæœºå’Œä¸­å¿ƒæ˜¯è¿çº¿çš„ï¼Œæ‰€ä»¥è¦ä¸€èµ·å¹³ç§»
+    //æ„å»ºè§†å›¾çŸ©é˜µ
     Mat4 view = Mat4::lookAt(eye, center, { 0,1,0 });
-    //¼ÆËã¿í¸ß±È
+    //è®¡ç®—å®½é«˜æ¯”
     float aspect = (float)g_winW / g_winH;
-    //¹¹½¨Í¸ÊÓÍ¶Ó°¾ØÕó
+    //æ„å»ºé€è§†æŠ•å½±çŸ©é˜µ
     Mat4 proj = Mat4::perspective(FOV_Y, aspect, Z_NEAR, Z_FAR);
-    //Ìî³ääÖÈ¾²ÎÊı½á¹¹Ìå
+    //å¡«å……æ¸²æŸ“å‚æ•°ç»“æ„ä½“
     RenderParams rp;
-    rp.mvp = proj * view * model;               //Ä£ĞÍ-ÊÓÍ¼-Í¶Ó° ¾ØÕó£ºÄ£ĞÍ¿Õ¼äµ½²Ã¼ô¿Õ¼ä
-    rp.modelView = view * model;                //Ä£ĞÍ-ÊÓÍ¼¾ØÕó£ºÓÃÓÚ½«·¨Ïß±ä»»µ½ÊÓÍ¼¿Õ¼ä½øĞĞ¹âÕÕ¼ÆËã
-    rp.lightDir = view.mulDir(Vec3(-0.5f, -0.5f, -1.f).norm()).norm();//ÊÓÍ¼¿Õ¼ä¹âÕÕ·½Ïò£¬Ö¸Ïò¹âÔ´£¨À¨ºÅÀïÊÇÊÀ½ç×ø±ê£©
-    rp.lightColor = { 0.5f, 0.5f, 0.5f };       //¹âÔ´ÑÕÉ«
-    rp.ambient = { 0.4f, 0.4f, 0.4f };          //»·¾³¹âÑÕÉ«
-    rp.width = g_winW;                          //Ö¡»º³å¿í¶È£¨ÏñËØ£©
-    rp.height = g_winH;                         //Ö¡»º³å¸ß¶È£¨ÏñËØ£©
-    rp.numTris = g_numTris;                     //Èı½ÇĞÎ×ÜÊı     
-    rp.wireframe = g_wireframe ? 1 : 0;         //·Ç0Îª»æÖÆÏß¿òÄ£Ê½
-    rp.specPower = 64.f;                        //¸ß¹âÖ¸Êı£¨Ïñ¾µÃæ³Ì¶È£©
+    rp.mvp = proj * view * model;               //æ¨¡å‹-è§†å›¾-æŠ•å½± çŸ©é˜µï¼šæ¨¡å‹ç©ºé—´åˆ°è£å‰ªç©ºé—´
+    rp.modelView = view * model;                //æ¨¡å‹-è§†å›¾çŸ©é˜µï¼šç”¨äºå°†æ³•çº¿å˜æ¢åˆ°è§†å›¾ç©ºé—´è¿›è¡Œå…‰ç…§è®¡ç®—
+    rp.lightDir = view.mulDir(Vec3(-0.5f, -0.7f, -1.f).norm()).norm();//è§†å›¾ç©ºé—´å…‰ç…§æ–¹å‘ï¼ŒæŒ‡å‘å…‰æºï¼ˆæ‹¬å·é‡Œæ˜¯ä¸–ç•Œåæ ‡ï¼‰
+    rp.lightColor = { 0.45f, 0.45f, 0.45f };    //å…‰æºé¢œè‰²
+    rp.ambient = { 0.35f, 0.35f, 0.35f };       //ç¯å¢ƒå…‰é¢œè‰²
+    rp.width = g_winW;                          //å¸§ç¼“å†²å®½åº¦ï¼ˆåƒç´ ï¼‰
+    rp.height = g_winH;                         //å¸§ç¼“å†²é«˜åº¦ï¼ˆåƒç´ ï¼‰
+    rp.numTris = g_numTris;                     //ä¸‰è§’å½¢æ€»æ•°     
+    rp.wireframe = g_wireframe ? 1 : 0;         //é0ä¸ºç»˜åˆ¶çº¿æ¡†æ¨¡å¼
+    rp.specPower = 64.f;                        //é«˜å…‰æŒ‡æ•°ï¼ˆåƒé•œé¢ç¨‹åº¦ï¼‰
 
-    //µ÷ÓÃCUDAäÖÈ¾£¨GPU¼ÆËã + ¿½±´»ØÖ÷»úÄÚ´æ£©
+    //è°ƒç”¨CUDAæ¸²æŸ“ï¼ˆGPUè®¡ç®— + æ‹·è´å›ä¸»æœºå†…å­˜ï¼‰
     p_cudaRender(rp, g_hFramebuf);
-    //½«äÖÈ¾½á¹û´ÓÄÚ´æDC¿½±´µ½´°¿ÚDC£¨Ë«»º³åÏÔÊ¾£©
+    //å°†æ¸²æŸ“ç»“æœä»å†…å­˜DCæ‹·è´åˆ°çª—å£DCï¼ˆåŒç¼“å†²æ˜¾ç¤ºï¼‰
     g_display.draw(g_hFramebuf);
 
-    //FPS Ö¡ÂÊÏÔÊ¾
+    //FPS å¸§ç‡æ˜¾ç¤º
     static DWORD lastTime = 0;
     static int frameCount = 0;
     static float fps = 0.0f;
@@ -208,7 +208,7 @@ static void renderFrame() {
         frameCount = 0;
         lastTime = curTime;
     }
-    //¸üĞÂ´°¿Ú±êÌâÀ¸ĞÅÏ¢
+    //æ›´æ–°çª—å£æ ‡é¢˜æ ä¿¡æ¯
     char title[128];
     const char* modeStr = g_voxelMode ? "Voxel" : (g_wireframe ? "Wire" : "Solid");
     if (g_voxelMode) {
@@ -218,51 +218,51 @@ static void renderFrame() {
     }
     else
         snprintf(title, sizeof(title),
-            "Tris:%d | FPS:%.1f | Mode:%s | Res:%d ¡ü/¡ı |[W]Wire [V]Voxel [O]Open [R]Reset",
+            "Tris:%d | FPS:%.1f | Mode:%s | Res:%d â†‘/â†“ |[W]Wire [V]Voxel [O]Open [R]Reset",
             g_numTris, fps, modeStr, g_voxelResolution);
     SetWindowTextA(g_hwnd, title);
 }
 
 //-------------------------------------------------------------------
-//Win32´°¿ÚÏûÏ¢»Øµ÷º¯Êı£¨ÆäÊµ¾ÍÊÇ¶Ô¸÷×Ô²Ù×÷µÄ·´Ó¦£©
+//Win32çª—å£æ¶ˆæ¯å›è°ƒå‡½æ•°ï¼ˆå…¶å®å°±æ˜¯å¯¹å„è‡ªæ“ä½œçš„ååº”ï¼‰
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-    case WM_DESTROY: {                  //´°¿Ú±»Ïú»Ù
-        PostQuitMessage(0);             //·¢ËÍÍË³öÏûÏ¢£¬ÖÕÖ¹ÏûÏ¢Ñ­»·
+    case WM_DESTROY: {                  //çª—å£è¢«é”€æ¯
+        PostQuitMessage(0);             //å‘é€é€€å‡ºæ¶ˆæ¯ï¼Œç»ˆæ­¢æ¶ˆæ¯å¾ªç¯
         return 0;
     }
     case WM_SIZE:
         if (wp != SIZE_MINIMIZED) {
             g_winW = LOWORD(lp);
             g_winH = HIWORD(lp);
-            // ÖØ½¨ Direct2D äÖÈ¾Ä¿±ê
+            // é‡å»º Direct2D æ¸²æŸ“ç›®æ ‡
             g_display.cleanup();
             if (!g_display.init(hwnd, g_winW, g_winH)) {
-                MessageBoxA(hwnd, "Direct2D ÖØ½¨Ê§°Ü", "Error", MB_OK);
+                MessageBoxA(hwnd, "Direct2D é‡å»ºå¤±è´¥", "Error", MB_OK);
             }
-            // ÖØ½¨Ö¡»º³å
+            // é‡å»ºå¸§ç¼“å†²
             delete[] g_hFramebuf;
             g_hFramebuf = new unsigned int[g_winW * g_winH];
-            // ÖØ½¨ CUDA »º³åÇø£¨²»ÊÍ·ÅÈı½ÇĞÎÊı¾İ£©
+            // é‡å»º CUDA ç¼“å†²åŒºï¼ˆä¸é‡Šæ”¾ä¸‰è§’å½¢æ•°æ®ï¼‰
             p_cudaInit(g_winW, g_winH, nullptr, 0);
 
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
-    case WM_KEYDOWN: {                  //¼üÅÌ°´ÏÂ
-        if (wp == VK_ESCAPE) {          //ESC¼ü£ºÍË³ö³ÌĞò
+    case WM_KEYDOWN: {                  //é”®ç›˜æŒ‰ä¸‹
+        if (wp == VK_ESCAPE) {          //ESCé”®ï¼šé€€å‡ºç¨‹åº
             PostQuitMessage(0);
         }
-        else if (wp == 'W') {           //W¼ü£ºÇĞ»»Ïß¿ò/ÊµÌåÄ£Ê½
+        else if (wp == 'W') {           //Wé”®ï¼šåˆ‡æ¢çº¿æ¡†/å®ä½“æ¨¡å¼
             g_wireframe = !g_wireframe;
-            InvalidateRect(hwnd, nullptr, FALSE);  //±ê¼Ç´°¿ÚĞèÒªÖØ»æ
+            InvalidateRect(hwnd, nullptr, FALSE);  //æ ‡è®°çª—å£éœ€è¦é‡ç»˜
         }
-        else if (wp == 'V') {           //V¼ü£ºÇĞ»»ÌåËØÄ£Ê½
+        else if (wp == 'V') {           //Vé”®ï¼šåˆ‡æ¢ä½“ç´ æ¨¡å¼
             if (g_isEmbeddedModel) {
                 MessageBoxA(hwnd,
-                    "Ä¬ÈÏÁ¢·½ÌåÄ£ĞÍ²»Ö§³ÖÌåËØÄ£Ê½¡£\n\n"
-                    "ÇëÏÈÊ¹ÓÃ O ¼ü´ò¿ª OBJ ÎÄ¼ş£¬È»ºóÔÙÇĞ»»ÌåËØÄ£Ê½¡£",
-                    "¹¦ÄÜ²»¿ÉÓÃ",
+                    "é»˜è®¤ç«‹æ–¹ä½“æ¨¡å‹ä¸æ”¯æŒä½“ç´ æ¨¡å¼ã€‚\n\n"
+                    "è¯·å…ˆä½¿ç”¨ O é”®æ‰“å¼€ OBJ æ–‡ä»¶ï¼Œç„¶åå†åˆ‡æ¢ä½“ç´ æ¨¡å¼ã€‚",
+                    "åŠŸèƒ½ä¸å¯ç”¨",
                     MB_OK | MB_ICONINFORMATION);
                 return 0;
             }
@@ -270,12 +270,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             loadModel(g_currentModelPath);
             InvalidateRect(hwnd, nullptr, FALSE);
         }
-        else if (wp == 'R') {           //R¼ü£ºÖØÖÃÉãÏñ»ú
+        else if (wp == 'R') {           //Ré”®ï¼šé‡ç½®æ‘„åƒæœº
             g_rotX = 0.3f; g_rotY = 0.5f; g_zoom = 4.0f;
             g_panX = 0.f; g_panY = 0.f;
             InvalidateRect(hwnd, nullptr, FALSE);
         }
-        else if (wp == 'O') {           //O¼ü£º´ò¿ªOBJÎÄ¼ş
+        else if (wp == 'O') {           //Oé”®ï¼šæ‰“å¼€OBJæ–‡ä»¶
             std::string path = openFileDialog(hwnd);
             if (!path.empty()) { 
                 g_voxelMode = false;
@@ -284,36 +284,36 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             InvalidateRect(hwnd, nullptr, FALSE);
         }
-        else if (wp == 'G' && g_voxelMode && g_numTris > 0) {   //G¼ü£ºµ¼³öÌåËØ»¯objÎÄ¼ş
-            OPENFILENAMEA ofn = {};                     // ±£´æÎÄ¼ş¶Ô»°¿ò½á¹¹Ìå
-            ofn.lStructSize = sizeof(ofn);              // Windows ÒªÇóµÄ°æ±¾ĞÅÏ¢
-            ofn.hwndOwner = hwnd;                       // ¸¸´°¿Ú
-            ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";// ÎÄ¼şÀàĞÍ¹ıÂËÆ÷
-            char buf[MAX_PATH] = "voxelized";           // Ä¬ÈÏÎÄ¼şÃû£¨ÎŞºó×º£©
-            ofn.lpstrFile = buf;                        // ÓÃ»§ÊäÈëµÄÂ·¾¶´æµ½ÕâÀï
-            ofn.nMaxFile = MAX_PATH;                    // »º³åÇø´óĞ¡
-            ofn.Flags = OFN_OVERWRITEPROMPT;            // ¸²¸ÇÒÑÓĞÎÄ¼şÊ±µ¯³öÈ·ÈÏÌáÊ¾
+        else if (wp == 'G' && g_voxelMode && g_numTris > 0) {   //Gé”®ï¼šå¯¼å‡ºä½“ç´ åŒ–objæ–‡ä»¶
+            OPENFILENAMEA ofn = {};                     // ä¿å­˜æ–‡ä»¶å¯¹è¯æ¡†ç»“æ„ä½“
+            ofn.lStructSize = sizeof(ofn);              // Windows è¦æ±‚çš„ç‰ˆæœ¬ä¿¡æ¯
+            ofn.hwndOwner = hwnd;                       // çˆ¶çª—å£
+            ofn.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files\0*.*\0";// æ–‡ä»¶ç±»å‹è¿‡æ»¤å™¨
+            char buf[MAX_PATH] = "voxelized";           // é»˜è®¤æ–‡ä»¶åï¼ˆæ— åç¼€ï¼‰
+            ofn.lpstrFile = buf;                        // ç”¨æˆ·è¾“å…¥çš„è·¯å¾„å­˜åˆ°è¿™é‡Œ
+            ofn.nMaxFile = MAX_PATH;                    // ç¼“å†²åŒºå¤§å°
+            ofn.Flags = OFN_OVERWRITEPROMPT;            // è¦†ç›–å·²æœ‰æ–‡ä»¶æ—¶å¼¹å‡ºç¡®è®¤æç¤º
 
-            if (GetSaveFileNameA(&ofn)) {               // µ¯³ö±£´æ¶Ô»°¿ò£¬ÓÃ»§µã"±£´æ"
+            if (GetSaveFileNameA(&ofn)) {               // å¼¹å‡ºä¿å­˜å¯¹è¯æ¡†ï¼Œç”¨æˆ·ç‚¹"ä¿å­˜"
                 std::string path(buf);
                 if (path.size() < 4 || path.substr(path.size() - 4) != ".obj") {
-                    path += ".obj";                     // Èç¹ûÓÃ»§Ã»Ğ´ .obj£¬×Ô¶¯²¹ÉÏ£¨·ÀÖ¹¸ÄÃûºó²»ÊÇobjÎÄ¼ş£©
+                    path += ".obj";                     // å¦‚æœç”¨æˆ·æ²¡å†™ .objï¼Œè‡ªåŠ¨è¡¥ä¸Šï¼ˆé˜²æ­¢æ”¹ååä¸æ˜¯objæ–‡ä»¶ï¼‰
                 }
-                if (exportVoxelObj(path.c_str(), g_hTris, g_numTris)) {// µ÷ÓÃµ¼³öº¯ÊıĞ´ OBJ ÎÄ¼ş
-                    MessageBoxA(hwnd, "ÌåËØ»¯OBJµ¼³ö³É¹¦£¡", "µ¼³öÍê³É", MB_OK | MB_ICONINFORMATION);
+                if (exportVoxelObj(path.c_str(), g_hTris, g_numTris)) {// è°ƒç”¨å¯¼å‡ºå‡½æ•°å†™ OBJ æ–‡ä»¶
+                    MessageBoxA(hwnd, "ä½“ç´ åŒ–OBJå¯¼å‡ºæˆåŠŸï¼", "å¯¼å‡ºå®Œæˆ", MB_OK | MB_ICONINFORMATION);
                 }
                 else {
-                    MessageBoxA(hwnd, "µ¼³öÊ§°Ü£¡ÎŞ·¨Ğ´ÈëÎÄ¼ş¡£", "´íÎó", MB_OK | MB_ICONERROR);
+                    MessageBoxA(hwnd, "å¯¼å‡ºå¤±è´¥ï¼æ— æ³•å†™å…¥æ–‡ä»¶ã€‚", "é”™è¯¯", MB_OK | MB_ICONERROR);
                 }
             }
         }
-        else if (wp == VK_UP) {         // ÉÏ¼ıÍ·£ºÔö¼ÓÃÜ¶È£¨½öÔÚ·ÇÌåËØÄ£Ê½£©
+        else if (wp == VK_UP) {         // ä¸Šç®­å¤´ï¼šå¢åŠ å¯†åº¦ï¼ˆä»…åœ¨éä½“ç´ æ¨¡å¼ï¼‰
             if (!g_voxelMode) {
                 g_voxelResolution = fminf(1280, g_voxelResolution + 8);
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
         }
-        else if (wp == VK_DOWN) {       // ÏÂ¼ıÍ·£º½µµÍÃÜ¶È£¨½öÔÚ·ÇÌåËØÄ£Ê½£©
+        else if (wp == VK_DOWN) {       // ä¸‹ç®­å¤´ï¼šé™ä½å¯†åº¦ï¼ˆä»…åœ¨éä½“ç´ æ¨¡å¼ï¼‰
             if (!g_voxelMode) {
                 g_voxelResolution = fmaxf(64, g_voxelResolution - 8);
                 InvalidateRect(hwnd, nullptr, FALSE);
@@ -321,14 +321,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     }
-    case WM_LBUTTONDOWN: {            //Êó±ê×ó¼ü°´ÏÂ
-        g_dragging = true;            //¿ªÊ¼ÍÏ×§
-        g_lastMX = LOWORD(lp);        //¼ÇÂ¼µ±Ç°Êó±êX×ø±ê£¨µÍ16Î»£©
-        g_lastMY = HIWORD(lp);        //¼ÇÂ¼µ±Ç°Êó±êY×ø±ê£¨¸ß16Î»£©
-        SetCapture(hwnd);             //²¶»ñÊó±ê£¨¼´Ê¹Êó±êÒÆ³ö´°¿ÚÒ²ÄÜ½ÓÊÕÏûÏ¢£©
+    case WM_LBUTTONDOWN: {            //é¼ æ ‡å·¦é”®æŒ‰ä¸‹
+        g_dragging = true;            //å¼€å§‹æ‹–æ‹½
+        g_lastMX = LOWORD(lp);        //è®°å½•å½“å‰é¼ æ ‡Xåæ ‡ï¼ˆä½16ä½ï¼‰
+        g_lastMY = HIWORD(lp);        //è®°å½•å½“å‰é¼ æ ‡Yåæ ‡ï¼ˆé«˜16ä½ï¼‰
+        SetCapture(hwnd);             //æ•è·é¼ æ ‡ï¼ˆå³ä½¿é¼ æ ‡ç§»å‡ºçª—å£ä¹Ÿèƒ½æ¥æ”¶æ¶ˆæ¯ï¼‰
         return 0;
     }
-    case WM_RBUTTONDOWN: {            //Êó±êÓÒ¼ü°´ÏÂ
+    case WM_RBUTTONDOWN: {            //é¼ æ ‡å³é”®æŒ‰ä¸‹
         g_panning = true;
         g_lastMX = LOWORD(lp);
         g_lastMY = HIWORD(lp);
@@ -336,21 +336,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_MOUSEMOVE: {
-        if (g_dragging) {           //×ó¼üÒÆ¶¯
-            int mx = LOWORD(lp), my = HIWORD(lp);   //µ±Ç°Êó±êÎ»ÖÃ
-            float dx = (mx - g_lastMX) * 0.008f;    //Ë®Æ½ÒÆ¶¯ÔöÁ¿£¨×ª»»ÎªĞı×ªÁ¿£©
-            float dy = (my - g_lastMY) * 0.008f;    //´¹Ö±ÒÆ¶¯ÔöÁ¿
-            g_rotY += dx;                           //Ë®Æ½ÍÏ×§=ÈÆYÖáĞı×ª
-            g_rotX += dy;                           //´¹Ö±ÍÏ×§=ÈÆXÖáĞı×ª
-            //ÏŞÖÆXÖáĞı×ª½Ç¶È£¨·ÀÖ¹Ä£ĞÍ·­×ª£©
+        if (g_dragging) {           //å·¦é”®ç§»åŠ¨
+            int mx = LOWORD(lp), my = HIWORD(lp);   //å½“å‰é¼ æ ‡ä½ç½®
+            float dx = (mx - g_lastMX) * 0.008f;    //æ°´å¹³ç§»åŠ¨å¢é‡ï¼ˆè½¬æ¢ä¸ºæ—‹è½¬é‡ï¼‰
+            float dy = (my - g_lastMY) * 0.008f;    //å‚ç›´ç§»åŠ¨å¢é‡
+            g_rotY += dx;                           //æ°´å¹³æ‹–æ‹½=ç»•Yè½´æ—‹è½¬
+            g_rotX += dy;                           //å‚ç›´æ‹–æ‹½=ç»•Xè½´æ—‹è½¬
+            //é™åˆ¶Xè½´æ—‹è½¬è§’åº¦ï¼ˆé˜²æ­¢æ¨¡å‹ç¿»è½¬ï¼‰
             if (g_rotX > 1.5f) g_rotX = 1.5f;
             if (g_rotX < -1.5f) g_rotX = -1.5f;
-            g_lastMX = mx; g_lastMY = my;           //¸üĞÂÉÏÒ»Ö¡Êó±êÎ»ÖÃ
-            InvalidateRect(hwnd, nullptr, FALSE);   //ÇëÇóÖØ»æ
+            g_lastMX = mx; g_lastMY = my;           //æ›´æ–°ä¸Šä¸€å¸§é¼ æ ‡ä½ç½®
+            InvalidateRect(hwnd, nullptr, FALSE);   //è¯·æ±‚é‡ç»˜
         }
-        else if (g_panning) {       //ÓÒ¼üÍÏ×§£ºÆ½ÒÆ
+        else if (g_panning) {       //å³é”®æ‹–æ‹½ï¼šå¹³ç§»
             int mx = LOWORD(lp), my = HIWORD(lp);
-            float dx = (mx - g_lastMX) * 0.003f;    //ÁéÃô¶È
+            float dx = (mx - g_lastMX) * 0.003f;    //çµæ•åº¦
             float dy = (my - g_lastMY) * 0.003f;
             g_panX -= dx;
             g_panY += dy;
@@ -359,106 +359,106 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     }
-    case WM_LBUTTONUP: {              //Êó±ê×ó¼üÊÍ·Å
-        g_dragging = false;           //Í£Ö¹ÍÏ×§
-        ReleaseCapture();             //ÊÍ·ÅÊó±ê²¶»ñ
+    case WM_LBUTTONUP: {              //é¼ æ ‡å·¦é”®é‡Šæ”¾
+        g_dragging = false;           //åœæ­¢æ‹–æ‹½
+        ReleaseCapture();             //é‡Šæ”¾é¼ æ ‡æ•è·
         return 0;
     }
-    case WM_RBUTTONUP: {              //Êó±êÓÒ¼üÊÍ·Å
+    case WM_RBUTTONUP: {              //é¼ æ ‡å³é”®é‡Šæ”¾
         g_panning = false;
         ReleaseCapture();
         return 0;
     }
-    case WM_MOUSEWHEEL: {             //Êó±ê¹öÂÖ
-        int delta = GET_WHEEL_DELTA_WPARAM(wp);     //»ñÈ¡¹öÂÖÔöÁ¿£¨ÕıÖµ=ÏòÇ°¹ö£©
+    case WM_MOUSEWHEEL: {             //é¼ æ ‡æ»šè½®
+        int delta = GET_WHEEL_DELTA_WPARAM(wp);     //è·å–æ»šè½®å¢é‡ï¼ˆæ­£å€¼=å‘å‰æ»šï¼‰
         float sensitivity;
         if (g_zoom < 2.0f) {
-            //¼«½ü¾àÀë
+            //æè¿‘è·ç¦»
             sensitivity = 0.001f;
         }
         else if (g_zoom < 6.0f) {
-            //½ü¾àÀë
+            //è¿‘è·ç¦»
             sensitivity = 0.002f;
         }
         else {
-            //Õı³£¾àÀë
+            //æ­£å¸¸è·ç¦»
             sensitivity = 0.005f;
         }
         g_zoom -= delta * sensitivity;
-        //ÏŞÖÆËõ·Å·¶Î§
-        if (g_zoom < 0.2f) g_zoom = 0.2f;       //×î½ü¾àÀë
-        if (g_zoom > 16.f) g_zoom = 16.f;       //×îÔ¶¾àÀë
-        InvalidateRect(hwnd, nullptr, FALSE);   //ÇëÇóÖØ»æ
+        //é™åˆ¶ç¼©æ”¾èŒƒå›´
+        if (g_zoom < 0.2f) g_zoom = 0.2f;       //æœ€è¿‘è·ç¦»
+        if (g_zoom > 16.f) g_zoom = 16.f;       //æœ€è¿œè·ç¦»
+        InvalidateRect(hwnd, nullptr, FALSE);   //è¯·æ±‚é‡ç»˜ï¼Œçª—å£ï¼Œæ•´ä¸ªçª—å£åŒºï¼Œä¸æ“¦èƒŒæ™¯
         return 0;
     }
-    case WM_PAINT: {                  //´°¿Ú»æÖÆÏûÏ¢£¬ÏìÓ¦ÖØ»æÇëÇó£¬Ò»´Î´¦Àí»ıÑ¹µÄÇëÇó£¬½ÚÊ¡×ÊÔ´
+    case WM_PAINT: {                  //çª—å£ç»˜åˆ¶æ¶ˆæ¯ï¼Œå“åº”é‡ç»˜è¯·æ±‚ï¼Œä¸€æ¬¡å¤„ç†ç§¯å‹çš„è¯·æ±‚ï¼ŒèŠ‚çœèµ„æº
         PAINTSTRUCT ps;
-        BeginPaint(hwnd, &ps);        //¿ªÊ¼»æÖÆ£¨»ñÈ¡»æÖÆÇøÓò£©
-        renderFrame();                //Ö´ĞĞäÖÈ¾
-        EndPaint(hwnd, &ps);          //½áÊø»æÖÆ
+        BeginPaint(hwnd, &ps);        //å¼€å§‹ç»˜åˆ¶ï¼ˆè·å–ç»˜åˆ¶åŒºåŸŸï¼‰
+        renderFrame();                //æ‰§è¡Œæ¸²æŸ“
+        EndPaint(hwnd, &ps);          //ç»“æŸç»˜åˆ¶
         return 0;
     }
-    case WM_ERASEBKGND:               //²Á³ı±³¾°ÏûÏ¢£¨ÖØ»æÊ±Windows×Ô¼ºÏë²Á£¬ÕâÑù»áÉÁÆÁ£©
-        return 1;                     //·µ»Ø·ÇÁãÖµ±íÊ¾ÒÑ´¦Àí£¨·ÀÖ¹ÉÁË¸£©
+    case WM_ERASEBKGND:               //æ“¦é™¤èƒŒæ™¯æ¶ˆæ¯ï¼ˆé‡ç»˜æ—¶Windowsè‡ªå·±æƒ³æ“¦ï¼Œè¿™æ ·ä¼šé—ªå±ï¼‰
+        return 1;                     //è¿”å›éé›¶å€¼è¡¨ç¤ºå·²å¤„ç†ï¼ˆé˜²æ­¢é—ªçƒï¼‰
     }
-    //µ÷ÓÃÄ¬ÈÏ´°¿Ú¹ı³Ì´¦ÀíÆäËûÏûÏ¢£¨Ã»¶¨ÒåµÄÓÒ¼ü¡¢ÒÆ¶¯´°¿ÚÊ²Ã´µÄ£©
+    //è°ƒç”¨é»˜è®¤çª—å£è¿‡ç¨‹å¤„ç†å…¶ä»–æ¶ˆæ¯ï¼ˆæ²¡å®šä¹‰çš„å³é”®ã€ç§»åŠ¨çª—å£ä»€ä¹ˆçš„ï¼‰
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
 
 //===================================================================
-//WinMain(windowsµÄmainº¯Êı)
-int WINAPI WinMain(HINSTANCE hInst, //³ÌĞòÉí·İ±ê¼Ç
-    HINSTANCE,                      //¹ıÊ±µÄ¶«Î÷£¬ÓÀÔ¶Îª¿Õ
-    LPSTR lpCmdLine,                //ÃüÁîĞĞ²ÎÊı£¬ÔİÊ±Ã»ÓÃ
-    int nShow                       //´°¿Ú³õÊ¼ÏÔÊ¾·½Ê½£¨×î´ó»¯£¬×îĞ¡»¯£¬Õı³££©
+//WinMain(windowsçš„mainå‡½æ•°)
+int WINAPI WinMain(HINSTANCE hInst, //ç¨‹åºèº«ä»½æ ‡è®°
+    HINSTANCE,                      //è¿‡æ—¶çš„ä¸œè¥¿ï¼Œæ°¸è¿œä¸ºç©º
+    LPSTR lpCmdLine,                //å‘½ä»¤è¡Œå‚æ•°ï¼Œæš‚æ—¶æ²¡ç”¨
+    int nShow                       //çª—å£åˆå§‹æ˜¾ç¤ºæ–¹å¼ï¼ˆæœ€å¤§åŒ–ï¼Œæœ€å°åŒ–ï¼Œæ­£å¸¸ï¼‰
     ){
 
-    //Direct2DĞèÒªCOM³õÊ¼»¯
+    //Direct2Déœ€è¦COMåˆå§‹åŒ–
     CoInitialize(nullptr);  
 
-    //·ÖÅä¿ØÖÆÌ¨´°¿Ú
+    //åˆ†é…æ§åˆ¶å°çª—å£
     AllocConsole();
-    freopen("CONOUT$", "w", stdout);   //ÖØ¶¨Ïò±ê×¼Êä³öµ½¿ØÖÆÌ¨
-    freopen("CONOUT$", "w", stderr);   //ÖØ¶¨Ïò±ê×¼´íÎóµ½¿ØÖÆÌ¨
+    freopen("CONOUT$", "w", stdout);   //é‡å®šå‘æ ‡å‡†è¾“å‡ºåˆ°æ§åˆ¶å°
+    freopen("CONOUT$", "w", stderr);   //é‡å®šå‘æ ‡å‡†é”™è¯¯åˆ°æ§åˆ¶å°
 
-    //³õÊ¼»¯äÖÈ¾Æ÷£¬¼ÓÔØDLL + ³õÊ¼»¯CUDA
-    if (!initRenderer()) return 1;     //³õÊ¼»¯Ê§°ÜÔòÍË³ö
+    //åˆå§‹åŒ–æ¸²æŸ“å™¨ï¼ŒåŠ è½½DLL + åˆå§‹åŒ–CUDA
+    if (!initRenderer()) return 1;     //åˆå§‹åŒ–å¤±è´¥åˆ™é€€å‡º
 
-    //×¢²á´°¿ÚÀà
+    //æ³¨å†Œçª—å£ç±»
     WNDCLASSEXA wc = {};
-    wc.cbSize = sizeof(wc);                         //½á¹¹Ìå´óĞ¡
-    wc.style = CS_HREDRAW | CS_VREDRAW;             //´°¿Ú´óĞ¡¸Ä±äÊ±ÖØ»æ
-    wc.lpfnWndProc = WndProc;                       //´°¿ÚÏûÏ¢´¦Àíº¯Êı
-    wc.hInstance = hInst;                           //Ó¦ÓÃ³ÌĞòµ±Ç°ÊµÀı¾ä±ú
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);    //´°¿ÚÉÏÊó±êÖ¸ÕëÏÔÊ¾¼ıÍ·
-    wc.lpszClassName = "3DViewer";                  //´°¿ÚÀàÃû£¬ºóĞøÒıÓÃ
-    wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);  //Ä¬ÈÏÓ¦ÓÃÍ¼±ê
-    RegisterClassExA(&wc);                          //×¢²á´°¿ÚÀà
+    wc.cbSize = sizeof(wc);                         //ç»“æ„ä½“å¤§å°
+    wc.style = CS_HREDRAW | CS_VREDRAW;             //çª—å£å¤§å°æ”¹å˜æ—¶é‡ç»˜
+    wc.lpfnWndProc = WndProc;                       //çª—å£æ¶ˆæ¯å¤„ç†å‡½æ•°
+    wc.hInstance = hInst;                           //åº”ç”¨ç¨‹åºå½“å‰å®ä¾‹å¥æŸ„
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);    //çª—å£ä¸Šé¼ æ ‡æŒ‡é’ˆæ˜¾ç¤ºç®­å¤´
+    wc.lpszClassName = "3DViewer";                  //çª—å£ç±»åï¼Œåç»­å¼•ç”¨
+    wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);  //é»˜è®¤åº”ç”¨å›¾æ ‡
+    RegisterClassExA(&wc);                          //æ³¨å†Œçª—å£ç±»
 
-    //¼ÆËã´°¿ÚÊµ¼Ê´óĞ¡£¨¿¼ÂÇ±êÌâÀ¸ºÍ±ß¿ò£©
-    RECT rc = { 0, 0, g_winW, g_winH };                 //Ä¿±ê´°¿Ú´óĞ¡
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);  //¼ÆËã¼Ó±êÌâÀ¸ºÍ±ß¿òºóµÄ´óĞ¡
-    int ww = rc.right - rc.left;                        //Êµ¼Ê´°¿Ú¿í¶È
-    int wh = rc.bottom - rc.top;                        //Êµ¼Ê´°¿Ú¸ß¶È
+    //è®¡ç®—çª—å£å®é™…å¤§å°ï¼ˆè€ƒè™‘æ ‡é¢˜æ å’Œè¾¹æ¡†ï¼‰
+    RECT rc = { 0, 0, g_winW, g_winH };                 //ç›®æ ‡çª—å£å¤§å°
+    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);  //è®¡ç®—åŠ æ ‡é¢˜æ å’Œè¾¹æ¡†åçš„å¤§å°
+    int ww = rc.right - rc.left;                        //å®é™…çª—å£å®½åº¦
+    int wh = rc.bottom - rc.top;                        //å®é™…çª—å£é«˜åº¦
 
-    //´´½¨´°¿Ú
+    //åˆ›å»ºçª—å£
     g_hwnd = CreateWindowExA(
-        0, "3DViewer",                          //´°¿ÚÀàÃû
-        "3D Viewer",                            //´°¿Ú±êÌâ
-        WS_OVERLAPPEDWINDOW,                    //´°¿ÚÑùÊ½£¨¿Éµ÷Õû´óĞ¡¡¢ÓĞ±êÌâÀ¸¡¢¿É×î´ó»¯×îĞ¡»¯£©
-        CW_USEDEFAULT, CW_USEDEFAULT, ww, wh,   //Î»ÖÃºÍ´óĞ¡£¨×Ô¶¯Ñ¡Ôñ£©
-        nullptr, nullptr, hInst, nullptr);      //¸¸´°¿Ú£¬²Ëµ¥£¬Ó¦ÓÃ³ÌĞòÊµÀı¾ä±ú£¬¶îÍâ²ÎÊı
-    if (!g_hwnd) { fprintf(stderr, "´´½¨´°¿ÚÊ§°Ü\n"); return 1; }
+        0, "3DViewer",                          //çª—å£ç±»å
+        "3D Viewer",                            //çª—å£æ ‡é¢˜
+        WS_OVERLAPPEDWINDOW,                    //çª—å£æ ·å¼ï¼ˆå¯è°ƒæ•´å¤§å°ã€æœ‰æ ‡é¢˜æ ã€å¯æœ€å¤§åŒ–æœ€å°åŒ–ï¼‰
+        CW_USEDEFAULT, CW_USEDEFAULT, ww, wh,   //ä½ç½®å’Œå¤§å°ï¼ˆè‡ªåŠ¨é€‰æ‹©ï¼‰
+        nullptr, nullptr, hInst, nullptr);      //çˆ¶çª—å£ï¼Œèœå•ï¼Œåº”ç”¨ç¨‹åºå®ä¾‹å¥æŸ„ï¼Œé¢å¤–å‚æ•°
+    if (!g_hwnd) { fprintf(stderr, "åˆ›å»ºçª—å£å¤±è´¥\n"); return 1; }
 
-    //ÏÔÊ¾´°¿Ú
+    //æ˜¾ç¤ºçª—å£
     ShowWindow(g_hwnd, nShow);
 
-    //äÖÈ¾ÏñËØ
+    //æ¸²æŸ“åƒç´ 
     initDisplay(g_hwnd, g_winW, g_winH);
 
-    //Ä¬ÈÏ¼ÓÔØÄÚÇ¶µÄµ¥µãÄ£ĞÍ
+    //é»˜è®¤åŠ è½½å†…åµŒçš„å•ç‚¹æ¨¡å‹
     {
-        //¶¨ÒåÄÚÇ¶µÄOBJÎÄ¼ş£¨ÊµÖÊÊÇ×Ö·û´®£©
+        //å®šä¹‰å†…åµŒçš„OBJæ–‡ä»¶ï¼ˆå®è´¨æ˜¯å­—ç¬¦ä¸²ï¼‰
         static const char* embeddedPoint =
             "v  -1.0  -1.0  -1.0\n"
             "v  -1.0   1.0  -1.0\n"
@@ -481,11 +481,11 @@ int WINAPI WinMain(HINSTANCE hInst, //³ÌĞòÉí·İ±ê¼Ç
             "f 5 8 7\n"
             "f 5 7 6\n";
 
-        char tempPath[MAX_PATH];     //ÏµÍ³ÁÙÊ±Ä¿Â¼Â·¾¶»º³åÇø£¨Í¨³£ÊÇC:\Users\...\AppData\Local\Temp£©
-        char tempFile[MAX_PATH];     //ÁÙÊ±ÎÄ¼şÍêÕûÂ·¾¶»º³åÇø
+        char tempPath[MAX_PATH];     //ç³»ç»Ÿä¸´æ—¶ç›®å½•è·¯å¾„ç¼“å†²åŒºï¼ˆé€šå¸¸æ˜¯C:\Users\...\AppData\Local\Tempï¼‰
+        char tempFile[MAX_PATH];     //ä¸´æ—¶æ–‡ä»¶å®Œæ•´è·¯å¾„ç¼“å†²åŒº
 
-        GetTempPathA(sizeof(tempPath), tempPath);       //»ñÈ¡ÏµÍ³ÁÙÊ±Ä¿Â¼Â·¾¶£¬´æÈëtempPath
-        GetTempFileNameA(tempPath, "3dv", 0, tempFile); //ÔÚÁÙÊ±Ä¿Â¼Éú³ÉÎ¨Ò»ÎÄ¼şÃû
+        GetTempPathA(sizeof(tempPath), tempPath);       //è·å–ç³»ç»Ÿä¸´æ—¶ç›®å½•è·¯å¾„ï¼Œå­˜å…¥tempPath
+        GetTempFileNameA(tempPath, "3dv", 0, tempFile); //åœ¨ä¸´æ—¶ç›®å½•ç”Ÿæˆå”¯ä¸€æ–‡ä»¶å
 
         std::ofstream ofs(tempFile);
         if (ofs) {
@@ -497,19 +497,19 @@ int WINAPI WinMain(HINSTANCE hInst, //³ÌĞòÉí·İ±ê¼Ç
         DeleteFileA(tempFile);
     }
 
-    //ÏûÏ¢Ñ­»·
+    //æ¶ˆæ¯å¾ªç¯
     MSG msg = {};
-    while (GetMessageA(&msg, nullptr, 0, 0)) {      //»ñÈ¡ÏûÏ¢£¨Ã»ÏûÏ¢¾ÍĞİÃß£©
-        TranslateMessage(&msg);                     //·­Òë¼üÅÌÏûÏ¢
-        DispatchMessageA(&msg);                     //·Ö·¢ÏûÏ¢¸øÏûÏ¢º¯Êı
+    while (GetMessageA(&msg, nullptr, 0, 0)) {      //è·å–æ¶ˆæ¯ï¼ˆæ²¡æ¶ˆæ¯å°±ä¼‘çœ ï¼‰
+        TranslateMessage(&msg);                     //ç¿»è¯‘é”®ç›˜æ¶ˆæ¯
+        DispatchMessageA(&msg);                     //åˆ†å‘æ¶ˆæ¯ç»™æ¶ˆæ¯å‡½æ•°
     }
 
-    //ÊÍ·Å×ÊÔ´
-    if (p_cudaShutdown) p_cudaShutdown();           //¹Ø±ÕCUDAÊÍ·ÅÏÔ´æ
-    delete[] g_hTris;                               //ÊÍ·ÅÈı½ÇĞÎÊı¾İ
+    //é‡Šæ”¾èµ„æº
+    if (p_cudaShutdown) p_cudaShutdown();           //å…³é—­CUDAé‡Šæ”¾æ˜¾å­˜
+    delete[] g_hTris;                               //é‡Šæ”¾ä¸‰è§’å½¢æ•°æ®
     delete[] g_hFramebuf;
-    if (g_hKernel) FreeLibrary(g_hKernel);          //Ğ¶ÔØDLL
+    if (g_hKernel) FreeLibrary(g_hKernel);          //å¸è½½DLL
 
     CoUninitialize();
-    return (int)msg.wParam;                        //·µ»ØÍË³ö´úÂë
+    return (int)msg.wParam;                        //è¿”å›é€€å‡ºä»£ç 
 }
