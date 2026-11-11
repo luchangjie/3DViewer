@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>3DViewer · CUDA 纯软件光栅化渲染器</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --bg-card: #1c2230;
+    --border: #2d3544;
+    --text: #e6edf3;
+    --text-dim: #9aa7b4;
+    --accent: #58a6ff;
+    --accent-2: #7ee787;
+    --accent-3: #ff7b72;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+      "PingFang SC", "Hiragino Sans GB", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Hero ---------- */
+  header.hero {
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(1200px 500px at 80% -10%, rgba(88,166,255,.18), transparent 60%),
+      radial-gradient(900px 400px at 0% 10%, rgba(126,231,135,.10), transparent 55%),
+      var(--bg);
+  }
+  .hero-inner {
+    display: flex; align-items: center; gap: 48px;
+    padding: 72px 24px 80px; max-width: 1080px; margin: 0 auto;
+    flex-wrap: wrap;
+  }
+  .hero-text { flex: 1 1 420px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+  .badge {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--bg-soft); color: var(--text-dim);
+  }
+  .badge b { color: var(--accent); font-weight: 600; }
+  h1.title {
+    font-size: 60px; line-height: 1.05; letter-spacing: -1px; font-weight: 800;
+    background: linear-gradient(120deg, #fff 10%, var(--accent) 60%, var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .tagline { font-size: 19px; color: var(--text-dim); margin-top: 10px; }
+  .cta { display: flex; gap: 14px; margin-top: 28px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px; border-radius: 10px; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--border); background: var(--bg-soft); color: var(--text);
+    transition: .18s ease;
+  }
+  .btn:hover { transform: translateY(-2px); text-decoration: none; }
+  .btn.primary { background: var(--accent); color: #06101f; border-color: var(--accent); }
+  .btn.primary:hover { box-shadow: 0 8px 24px rgba(88,166,255,.35); }
+
+  /* ---------- CSS wireframe cube ---------- */
+  .cube-stage { flex: 0 0 220px; height: 220px; perspective: 700px; margin: 0 auto; }
+  .cube { width: 140px; height: 140px; position: relative; transform-style: preserve-3d;
+    margin: 40px auto; animation: spin 14s linear infinite; }
+  .face { position: absolute; width: 140px; height: 140px; border: 2px solid var(--accent);
+    background: rgba(88,166,255,.05); }
+  .f1 { transform: translateZ(70px); } .f2 { transform: rotateY(180deg) translateZ(70px); }
+  .f3 { transform: rotateY(90deg) translateZ(70px); } .f4 { transform: rotateY(-90deg) translateZ(70px); }
+  .f5 { transform: rotateX(90deg) translateZ(70px); } .f6 { transform: rotateX(-90deg) translateZ(70px); }
+  @keyframes spin { from { transform: rotateX(-25deg) rotateY(0); } to { transform: rotateX(-25deg) rotateY(360deg); } }
+
+  /* ---------- Sections ---------- */
+  section { padding: 64px 0; border-bottom: 1px solid var(--border); }
+  h2 { font-size: 30px; font-weight: 700; margin-bottom: 8px; }
+  .sec-sub { color: var(--text-dim); margin-bottom: 32px; }
+  h2 .hash { color: var(--accent); font-weight: 700; margin-right: 8px; }
+
+  .lead { font-size: 17px; color: var(--text); max-width: 820px; }
+  .lead b { color: var(--accent-2); }
+
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 22px; transition: .18s ease;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .card .ico { font-size: 26px; }
+  .card h3 { font-size: 17px; margin: 12px 0 6px; }
+  .card p { color: var(--text-dim); font-size: 14.5px; }
+
+  table.ctrl { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: var(--radius); }
+  table.ctrl th, table.ctrl td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--border); }
+  table.ctrl th { background: var(--bg-soft); color: var(--text-dim); font-weight: 600; font-size: 14px; }
+  table.ctrl td { background: var(--bg-card); }
+  table.ctrl td.key { font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    color: var(--accent-2); font-weight: 600; white-space: nowrap; }
+
+  /* ---------- Architecture ---------- */
+  .arch { display: flex; align-items: stretch; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+  .node { flex: 1 1 200px; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px; }
+  .node .t { font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .node .d { color: var(--text-dim); font-size: 14px; }
+  .arrow { align-self: center; color: var(--text-dim); font-size: 22px; }
+
+  .steps { counter-reset: s; list-style: none; }
+  .steps li { position: relative; padding: 14px 0 14px 52px; border-bottom: 1px dashed var(--border); }
+  .steps li::before { counter-increment: s; content: counter(s);
+    position: absolute; left: 0; top: 12px; width: 34px; height: 34px; border-radius: 50%;
+    background: var(--accent); color: #06101f; font-weight: 700; display: grid; place-items: center; }
+  .steps code { background: var(--bg-soft); border: 1px solid var(--border); padding: 2px 7px;
+    border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; color: var(--accent-2); }
+
+  .shots { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .shot { aspect-ratio: 16/10; border: 1px dashed var(--border); border-radius: var(--radius);
+    background: var(--bg-soft); display: grid; place-items: center; color: var(--text-dim);
+    font-size: 14px; text-align: center; padding: 16px; }
+  .shot b { color: var(--text); display: block; margin-bottom: 4px; }
+
+  .download-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .download-box .txt { font-size: 15px; color: var(--text-dim); }
+  .download-box .txt b { color: var(--text); }
+
+  footer { padding: 36px 0; color: var(--text-dim); font-size: 14px; text-align: center; }
+  footer a { color: var(--accent); }
+  @media (max-width: 640px) { h1.title { font-size: 44px; } .hero-inner { padding: 48px 20px 56px; } }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-text">
+      <h1 class="title">3DViewer</h1>
+      <div class="tagline">基于 NVIDIA CUDA 的纯软件光栅化 3D 渲染器</div>
+      <div class="badges">
+        <span class="badge"><b>CUDA</b> 12 · Compute Kernel</span>
+        <span class="badge"><b>C++17</b> / Win32</span>
+        <span class="badge"><b>RTX 5060</b> Laptop (Blackwell sm_120)</span>
+        <span class="badge">Blinn-Phong 着色</span>
+        <span class="badge">鼎甲杯参赛项目</span>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/luchangjie/3DViewer" target="_blank" rel="noopener">在 GitHub 查看</a>
+        <a class="btn" href="https://github.com/luchangjie/3DViewer/releases" target="_blank" rel="noopener">下载 Release</a>
+      </div>
+    </div>
+    <div class="cube-stage">
+      <div class="cube">
+        <div class="face f1"></div><div class="face f2"></div><div class="face f3"></div>
+        <div class="face f4"></div><div class="face f5"></div><div class="face f6"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="about">
+    <h2><span class="hash">#</span>项目简介</h2>
+    <p class="sec-sub">不依赖任何图形 API 的软件光栅化器</p>
+    <p class="lead">
+      这是一个<b>完全用软件实现</b>的 3D 光栅化渲染器：所有三角形的逐像素遍历与着色都在
+      <b>CUDA 核函数</b>里完成，不调用 Direct3D / OpenGL 等任何图形 API。CPU 侧用 C++ / Win32
+      负责窗口、消息循环与摄像机交互，渲染内核由 NVCC 编译为 DLL 供主程序调用。项目为
+      <b>"鼎甲杯"</b>答辩开发，目标平台为 RTX 5060 Laptop（Blackwell 架构，sm_120）。
+    </p>
+  </section>
+
+  <section id="features">
+    <h2><span class="hash">#</span>核心特性</h2>
+    <p class="sec-sub">从加载、着色到交互的完整能力</p>
+    <div class="grid">
+      <div class="card"><div class="ico">🧊</div><h3>纯软件光栅化</h3><p>暴力像素-三角形遍历，无图形 API 依赖，渲染逻辑完全可控。</p></div>
+      <div class="card"><div class="ico">⚡</div><h3>CUDA 加速内核</h3><p>NVCC 编译 render.cu 为 DLL，逐像素并行光栅化跑在 GPU 上。</p></div>
+      <div class="card"><div class="ico">💡</div><h3>Blinn-Phong 着色</h3><p>实现基础光照模型，呈现有体积感的明暗过渡。</p></div>
+      <div class="card"><div class="ico">📦</div><h3>OBJ 模型加载</h3><p>支持打开并渲染 .obj 模型，坚持保留原始面数、不做自动降面。</p></div>
+      <div class="card"><div class="ico">🧱</div><h3>体素模式</h3><p>可将模型以体素形式呈现，并导出 voxel 的 .obj 文件。</p></div>
+      <div class="card"><div class="ico">🎥</div><h3>自由视角控制</h3><p>旋转 / 平移 / 缩放 / 线框切换，实时观察模型。</p></div>
+    </div>
+  </section>
+
+  <section id="controls">
+    <h2><span class="hash">#</span>操作说明</h2>
+    <p class="sec-sub">运行 exe 后的交互快捷键</p>
+    <table class="ctrl">
+      <thead><tr><th>按键 / 操作</th><th>功能</th></tr></thead>
+      <tbody>
+        <tr><td class="key">鼠标左键拖拽</td><td>旋转模型</td></tr>
+        <tr><td class="key">鼠标右键拖拽</td><td>移动视角（视觉上移动模型）</td></tr>
+        <tr><td class="key">鼠标滚轮</td><td>缩放（推近 / 拉远）</td></tr>
+        <tr><td class="key">W</td><td>切换线框 / 实体显示模式</td></tr>
+        <tr><td class="key">O</td><td>打开 OBJ 文件对话框</td></tr>
+        <tr><td class="key">V</td><td>切换体素模式</td></tr>
+        <tr><td class="key">G</td><td>导出 voxel 的 obj 文件（普通模式无效）</td></tr>
+        <tr><td class="key">R</td><td>重置摄像机位置</td></tr>
+        <tr><td class="key">ESC</td><td>退出程序</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="arch">
+    <h2><span class="hash">#</span>技术架构</h2>
+    <p class="sec-sub">构建链与渲染内核接口</p>
+    <div class="arch">
+      <div class="node"><div class="t">Win32 / C++ 主程序</div><div class="d">窗口、消息循环、摄像机控制、模型 / 体素数据加载（cl / MSVC 编译）。</div></div>
+      <span class="arrow">→</span>
+      <div class="node"><div class="t">CUDA 渲染内核 (render.cu → DLL)</div><div class="d">NVCC 编译。导出四接口：<br>cudaInit / UploadTriangles / Render / Shutdown。</div></div>
+      <span class="arrow">→</span>
+      <div class="node"><div class="t">GPU 逐像素光栅化</div><div class="d">暴力遍历三角形 + Blinn-Phong 着色，输出帧缓冲。</div></div>
+    </div>
+    <p class="lead" style="margin-top:24px">
+      当前正在推进 <b>BVH 加速结构</b>，以突破约 <b>1.5 万面</b>的渲染性能瓶颈（目前为无加速结构的暴力遍历）。
+    </p>
+  </section>
+
+  <section id="build">
+    <h2><span class="hash">#</span>构建与运行</h2>
+    <p class="sec-sub">本地编译步骤（详见 <a href="部署说明.md">部署说明.md</a>）</p>
+    <ol class="steps">
+      <li>安装 <b>Visual Studio</b>（含 MSVC 工具链）与 <b>CUDA Toolkit 12.x</b>。</li>
+      <li>用 <code>NVCC</code> 编译 <code>render_kernel</code>（render.cu）生成渲染 DLL。</li>
+      <li>用 <code>cl</code>（MSVC）编译主程序（main.cpp 等）生成 exe。</li>
+      <li>运行 exe，按 <code>O</code> 打开 OBJ 模型即可开始渲染。</li>
+    </ol>
+  </section>
+
+  <section id="shots">
+    <h2><span class="hash">#</span>运行截图</h2>
+    <p class="sec-sub">把下面的占位框替换成你的实机截图（建议 16:9）</p>
+    <div class="shots">
+      <div class="shot"><span><b>实体渲染</b>把截图放到<br>docs/screenshots/01.png</span></div>
+      <div class="shot"><span><b>线框模式</b>把截图放到<br>docs/screenshots/02.png</span></div>
+      <div class="shot"><span><b>体素模式</b>把截图放到<br>docs/screenshots/03.png</span></div>
+    </div>
+  </section>
+
+  <section id="download">
+    <h2><span class="hash">#</span>下载与试用</h2>
+    <p class="sec-sub">Windows 可执行文件</p>
+    <div class="download-box">
+      <div class="txt"><b>3DViewer</b> 为 Windows 桌面程序（需 CUDA 12 与兼容 NVIDIA GPU）。<br>前往 GitHub Releases 下载最新构建。</div>
+      <a class="btn primary" href="https://github.com/luchangjie/3DViewer/releases" target="_blank" rel="noopener">前往 Releases ↓</a>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  © 2026 霄钦 程 · 项目托管于
+  <a href="https://github.com/luchangjie/3DViewer" target="_blank" rel="noopener">github.com/luchangjie/3DViewer</a>
+  · 鼎甲杯参赛作品
+</footer>
+
+</body>
+</html>
