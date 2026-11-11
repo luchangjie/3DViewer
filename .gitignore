@@ -366,3 +366,7 @@ FodyWeavers.xsd
 # ---- 3DViewer 项目补充 ----
 # 示例模型（覆盖上面的 *.obj 规则，使 models/ 下的模型可被跟踪）
 !models/*.obj
+# 含个人信息的旧交付目录（报名表/docx 等），不纳入版本控制
+TGWAI_CN/
+# WorkBuddy 本地工作内存（非项目文件）
+.workbuddy/
